@@ -1,5 +1,5 @@
 class Truck:
-    def __init__(self, truck_id, capacity=16, start_location="At Hub", start_time=0):
+    def __init__(self, truck_id, capacity=16, start_location="At Hub", start_time=0, speed=18):
 
         """
         Initialize a Truck object with:
@@ -16,6 +16,7 @@ class Truck:
         self.current_location = start_location
         self.mileage = 0
         self.current_time = start_time
+        self.speed = speed
 
         # stores packageIDs
         self.packages = []
@@ -56,6 +57,10 @@ class Truck:
         """
         self.current_location = new_location
         self.mileage += distance
+
+        # added this for further functionality to calculate time taken based on distance and speed
+        time_taken = distance / self.speed
+
         self.current_time += time_taken
         
             
