@@ -30,24 +30,41 @@ class Truck:
             raise Exception(f"Truck {self.truck_id} is at full capacity. Cannot load more packages.")
             
         self.packages.append(package_id)
-        pass
+        
+
+
+    # method to unload packages from the truck
+    def deliver_package(self, package_id):
+        """
+        Delivers package from the truck by its ID.
+        If the package is not found, it raises an error.
+        """
+
+        # checks to see if the package_id is in the package list
+        if package_id not in self.packages:
+            raise Exception(f"Package {package_id} not found on Truck {self.truck_id}. Cannot unload.")
+            
+        self.packages.remove(package_id)
+        return package_id
+
+
 
     # method to time track the truck's delivery progress
     def update_location(self, new_location, distance, time_taken):
         """
-        Update the truck's current location, mileage, and time after a delivery.
+        Updates the truck's current location, mileage, and time after a delivery.
         """
         self.current_location = new_location
         self.mileage += distance
         self.current_time += time_taken
-        pass
+        
             
 
     # method to check to see if a package is loaded onto the truck    
     def has_package(self, package_id):
         """
         Check if the truck has a specific package by its ID.
-        Returns True if the package is loaded, False otherwise.
+        Returns True if the package is loaded, returns False otherwise.
         """
         return package_id in self.packages
             
