@@ -1,7 +1,7 @@
 
 from Truck import Truck
 from HashTable import HashTable
-from distance_table import get_distance
+from DistanceTable import get_distance
 
 # ---------------------------------------------------
 #  Core Routing Algorithm (Deadline-First + Nearest Neighbor)
