@@ -1,5 +1,5 @@
 
-
+# Used as a template for implementations of the HashTable class, ended up starting from scratch
 class HashMap:
     def __init__(self):
 
