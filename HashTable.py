@@ -16,7 +16,7 @@ class HashTable:
         """Private method to compute the hash value for a given key."""
 
         # modulo to map a key (like package_id) to a bucket index
-        return key % len(self.size)
+        return key % self.size
 
 
     # insert method to add a key-value pair to the hash table
@@ -24,10 +24,10 @@ class HashTable:
        
         # - check if the key already exists in the bucket
         """Add a key-value pair to the hashmap."""
-        if key in self.data:
+        if key in self.table:
 
             # if it exists, update the value
-            self.data[key] = value
+            self.table[key] = value
 
         # - else, append the key-value pair to the bucket
         else:
@@ -63,28 +63,17 @@ class HashTable:
         bucket = self.table[index]
 
         # return the value if found, else return None
-        for i, (k, v) in enumerate(bucket):
+        for k, v in bucket:
             if k == key:
 
                     # if it exists,
-                return self.data[key]
+                return v
         
             # else, return None
             else:
-                return self.data.get(key, None)
+                return None
 
     
-        
-        
-
-
-
-
-    # TODO: Write a remove(self, key) method to remove a key-value pair from the hash table
-    # use _hash to find the bucket index
-    # search the bucket for the key (and delete it if found)
-    # 
-    # 
 
     def remove(self, key):
 
@@ -102,20 +91,20 @@ class HashTable:
             if k == key:
 
                 # if it exists, delete the key-value pair 
-                del self.data[key]
+                del bucket[i]
+                return True
        
-            # else, return None
-            else:
-                return self.data.get(key, None)
+            # else, not found
+            return False
 
 
 
 
     # # Loop through buckets and print contents in a readable way    
 
-    # def __str__(self):
-    #     """Return a string representation of the HashMap."""
+    def __str__(self):
+         """Return a string representation of the HashMap."""
         
-    #     return str(self.data)
+         return str(self.data)
 
 
