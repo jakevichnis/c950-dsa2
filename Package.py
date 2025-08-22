@@ -18,14 +18,7 @@ class Package:
 
         # String representation of the package object for easy debugging and display
     def __str__(self):
-        return f"Package ID: {self.id}, 
-        Address: {self.address}, 
-        Weight: {self.weight}kg, 
-        City: {self.city}, 
-        Zip: {self.zip_code}, 
-        Deadline: {self.deadline}, 
-        Status: {self.status}, 
-        Delivery Time: {self.delivery_time}"
+        return f"Package ID: {self.id}, Address: {self.address}, Weight: {self.weight}kg, City: {self.city}, Zip: {self.zip_code}, Deadline: {self.deadline}, Status: {self.status}, Delivery Time: {self.delivery_time}"
 
             
 
