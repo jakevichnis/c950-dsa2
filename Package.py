@@ -14,7 +14,7 @@ class PackageStatus(Enum):
 class Package:
 
     # intit method for the parameters of the package class
-    def __init__(self, package_id, address, weight, city, zip_code, deadline, status=PackageStatus.AT_HUB):
+    def __init__(self, package_id, address, weight, city, zip_code, deadline, status=PackageStatus.AT_HUB, notes=None):
         self.id = package_id
         self.address = address
         self.weight = weight
@@ -23,8 +23,16 @@ class Package:
         self.deadline = deadline
         self.status = PackageStatus.AT_HUB # type: ignore
 
+        self.notes = notes
+
+        # Default value for it landing in the grouped list
+        self.group_constrained = False
+
         # This will be used to track the delivery time of the package (updated later)
         self.delivery_time = None
+        
+        # store IDs of packages we have to group together
+        self.group_ids = set()
         
         # I decided to personally add this as I thought it'd be fun to possibly see
         # when a package was first being loaded. I initially had the idea 

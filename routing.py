@@ -1,20 +1,26 @@
 
+import Package
 from datetime import timedelta, datetime
 from Truck import Truck
 from HashTable import HashTable
 from DistanceTable import get_distance
+import csv
 
 # ---------------------------------------------------
-#  Core Routing Algorithm (Deadline-First + Nearest Neighbor)
+#  Core Routing Algorithm (Deadline-First Greedy + Nearest Neighbor)
 # ---------------------------------------------------
 
-# TODO: implement function to select next package with earliest deadline
+# implement function to select next package with earliest deadline
 def select_deadline_package(truck, hashtable, distance_table):
     """
     Check truck's remaining packages for any with urgent deadlines.
     If multiple, pick the one closest to current truck location.
     Return the selected package.
     """
+
+    # creating a group list for the constraint of having those packages together
+    grouped = []
+    
     # for loop iterating through each package on truck
     for package_id in truck.packages:
         
@@ -22,28 +28,26 @@ def select_deadline_package(truck, hashtable, distance_table):
         package = hashtable.get(package_id)
         
         # skip the package if already delivered
-        if package.status == PackageStatus.DELIVERED:
+        if package.status in (PackageStatus.DELIVERED, PackageStatus.EN_ROUTE):
             continue 
 
         # skip the package if it's delayed
-        if truck.current_time < package.delayed_until:
+        if package.delayed_until and truck.current_time < package.delayed_until:
             continue
         
-    # if statement flag for any package before 10:30am
+        # add package to 
+        if package.group_constrained:
+            grouped.append(package)
 
-    if this is the known "wrong address until 10:20" package, treat it as status = ineligible
-    before 10:20, after 10:20 status = "At Hub" with corrected address
-
-    if package must be delivered with a group (six together rule) and the truck cannot
-    deliver entire group in sequence (group members not on board or some are ineligible),
-    this package status = ineligible for this pass and
-        continue
+    # if package must be delivered with a group (six together rule) and the truck cannot
+    # deliver entire group in sequence (group members not on board or some are ineligible),
+    # this package status = ineligible for this pass and
+    #    continue
 
         # if multiple, while loop greedy for package closest to truck current_location
 
         # return in distance order package_id
-
-    
+    return     
 
     
 
