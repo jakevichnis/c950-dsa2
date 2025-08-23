@@ -42,12 +42,26 @@ def select_deadline_package(truck, hashtable, distance_table):
     # if package must be delivered with a group (six together rule) and the truck cannot
     # deliver entire group in sequence (group members not on board or some are ineligible),
     # this package status = ineligible for this pass and
-    #    continue
+    
 
         # if multiple, while loop greedy for package closest to truck current_location
 
-        # return in distance order package_id
-    return     
+        
+        # sets variables to let us filter for what we actually want to select now
+        earliest_package = None
+        earliest_deadline = None
+        
+        # selection process
+        if earliest_deadline is None or package.deadline < earliest_deadline:
+            earliest_deadline = package.deadline
+            earliest_package = package
+        
+        if earliest_package:
+            return earliest_package.package_id
+        else:
+            return None
+
+            
 
     
 
@@ -58,7 +72,35 @@ def select_nearest_neighbor(truck, hashtable, distance_table):
     find the package whose address is closest to truck's current location.
     Return that package.
     """
-    pass
+    nearest_package = None
+
+    # start with max distance
+    shortest_distance = float('inf')
+
+
+    for package_id in truck.packages:
+        
+        # hashtable of truck.packages, earliest deadline of = "at hub"
+        package = hashtable.get(package_id)
+        
+        # skip the package if already delivered
+        if package.status in (PackageStatus.DELIVERED, PackageStatus.EN_ROUTE):
+            continue 
+
+        # skip the package if it's delayed
+        if package.delayed_until and truck.current_time < package.delayed_until:
+            continue
+
+        # the heart of the greedy algorithm- at each iteration, pick the closest package
+        distance_to_package = get_distance(truck.current_location, package.address, distance_table)
+
+        if distance_to_package < shortest_distance:
+            shortest_distance = distance_to_package
+            nearest_package = package
+
+
+
+
 
 # TODO: core loop that runs delivery for a single truck
 def run_delivery(truck, hashtable, distance_table):
