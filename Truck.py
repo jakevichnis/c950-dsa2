@@ -34,7 +34,15 @@ class Truck:
         if len(self.packages) >= self.capacity:
             raise Exception(f"Truck {self.truck_id} is at full capacity. Cannot load more packages.")
             
-        package.load_time = self.current_time
+
+        # automatically update the package's status to en_route and record the load time
+        # after grabbing the package_id from the hash table
+        package = hashtable.get(package_id)
+        package.mark_en_route(self.current_time)
+
+
+        # ended up being redundant
+        # package.load_time = self.current_time
         
         self.packages.append(package_id)
         
@@ -51,10 +59,12 @@ class Truck:
         if package_id not in self.packages:
             raise Exception(f"Package {package_id} not found on Truck {self.truck_id}. Cannot unload.")
           
-        
-        package.delivery_time = self.current_time
+
+
         package = hashtable.get(package_id)
-        package.mark_delivered(datetime.now())
+        package.mark_delivered(self.current_time)
+
+
         self.packages.remove(package_id)
         return package_id
 
@@ -65,13 +75,14 @@ class Truck:
         """
         Updates the truck's current location, mileage, and time after a delivery.
         """
+
         self.current_location = new_location
         self.mileage += distance
 
-        # added this for further functionality to calculate time taken based on distance and speed
-        time_taken = distance / self.speed
-
+        # Calculate time taken as timedelta based on speed
+        time_taken = timedelta(hours=distance / self.speed)
         self.current_time += time_taken
+
         
             
 
