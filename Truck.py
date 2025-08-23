@@ -1,3 +1,7 @@
+
+from Package import Package
+from datetime import timedelta, datetime
+
 class Truck:
     def __init__(self, truck_id, capacity=16, start_location="At Hub", start_time=0, speed=18):
 
@@ -22,7 +26,7 @@ class Truck:
         self.packages = []
     
         # need method to load packages onto truck
-    def load_package(self, package_id):
+    def load_package(self, package_id, hashtable):
         """
         Load a package onto the truck by its ID.
         If truck is at capacity, raise an error.
@@ -30,12 +34,14 @@ class Truck:
         if len(self.packages) >= self.capacity:
             raise Exception(f"Truck {self.truck_id} is at full capacity. Cannot load more packages.")
             
+        package.load_time = self.current_time
+        
         self.packages.append(package_id)
         
 
 
     # method to unload packages from the truck
-    def deliver_package(self, package_id):
+    def deliver_package(self, package_id, hashtable):
         """
         Delivers package from the truck by its ID.
         If the package is not found, it raises an error.
@@ -44,7 +50,11 @@ class Truck:
         # checks to see if the package_id is in the package list
         if package_id not in self.packages:
             raise Exception(f"Package {package_id} not found on Truck {self.truck_id}. Cannot unload.")
-            
+          
+        
+        package.delivery_time = self.current_time
+        package = hashtable.get(package_id)
+        package.mark_delivered(datetime.now())
         self.packages.remove(package_id)
         return package_id
 

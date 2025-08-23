@@ -1,4 +1,5 @@
 
+from datetime import timedelta, datetime
 from Truck import Truck
 from HashTable import HashTable
 from DistanceTable import get_distance
@@ -14,7 +15,37 @@ def select_deadline_package(truck, hashtable, distance_table):
     If multiple, pick the one closest to current truck location.
     Return the selected package.
     """
-    pass  # replace with logic
+    # for loop iterating through each package on truck
+    for package_id in truck.packages:
+        
+        # hashtable of truck.packages, earliest deadline of = "at hub"
+        package = hashtable.get(package_id)
+        
+        # skip the package if already delivered
+        if package.status == PackageStatus.DELIVERED:
+            continue 
+
+        # skip the package if it's delayed
+        if truck.current_time < package.delayed_until:
+            continue
+        
+    # if statement flag for any package before 10:30am
+
+    if this is the known "wrong address until 10:20" package, treat it as status = ineligible
+    before 10:20, after 10:20 status = "At Hub" with corrected address
+
+    if package must be delivered with a group (six together rule) and the truck cannot
+    deliver entire group in sequence (group members not on board or some are ineligible),
+    this package status = ineligible for this pass and
+        continue
+
+        # if multiple, while loop greedy for package closest to truck current_location
+
+        # return in distance order package_id
+
+    
+
+    
 
 # TODO: implement function to select nearest neighbor package
 def select_nearest_neighbor(truck, hashtable, distance_table):
