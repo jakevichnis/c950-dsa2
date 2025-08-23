@@ -56,16 +56,16 @@ def select_deadline_package(truck, hashtable, distance_table):
             earliest_deadline = package.deadline
             earliest_package = package
         
-        if earliest_package:
-            return earliest_package.package_id
-        else:
-            return None
+    if earliest_package:
+        return earliest_package.package_id
+    else:
+        return None
 
             
 
     
 
-# TODO: implement function to select nearest neighbor package
+# implement function to select nearest neighbor package
 def select_nearest_neighbor(truck, hashtable, distance_table):
     """
     If no urgent deadline package exists,
@@ -94,15 +94,21 @@ def select_nearest_neighbor(truck, hashtable, distance_table):
         # the heart of the greedy algorithm- at each iteration, pick the closest package
         distance_to_package = get_distance(truck.current_location, package.address, distance_table)
 
+        # if there's a new shorter distance, reset location direction to this 
         if distance_to_package < shortest_distance:
             shortest_distance = distance_to_package
             nearest_package = package
 
 
+        # lock in on package selection destination
+    if nearest_package:
+        return nearest_package.package_id
+    else:
+        return None
 
 
 
-# TODO: core loop that runs delivery for a single truck
+# core loop that runs delivery for a single truck
 def run_delivery(truck, hashtable, distance_table):
     """
     While truck still has undelivered packages:
@@ -112,7 +118,28 @@ def run_delivery(truck, hashtable, distance_table):
         - update truck mileage, time, and package status
     End when all packages delivered.
     """
-    pass
+
+    while len(truck.packages) > 0:
+        package_id = select_deadline_package(truck, hashtable, distance_table)
+        if package_id is None:
+            package_id = select_nearest_neighbor(truck, hashtable, distance_table)
+
+        # retrieves package object from hashtable
+        package = hashtable.get(package_id)
+        
+        # travel logistics of how the distance is proportional to where the truck is
+        distance = get_distance(truck.current_location, package.address, distance_table)
+        time_taken = timedelta(hours = distance / truck.speed)
+
+        # logging the actual process of delivering the package, first by truck then by package
+        truck.update_location(package.address, distance, time_taken)
+        
+        # calling the deliver package method from our truck class
+        truck.deliver_package(package_id, hashtable)
+
+        print(f"Truck {truck.truck_id} delivered package {package.package_id} at {truck.current_time.strftime('%I:%M %p')}")
+    
+    
 
 # ---------------------------------------------------
 #  Helpers (optional)
