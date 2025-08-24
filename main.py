@@ -3,6 +3,7 @@
 
 from datetime import datetime
 import Package
+from Package import PackageStatus
 from Truck import Truck
 from HashTable import HashTable
 from DistanceTable import DistanceTable

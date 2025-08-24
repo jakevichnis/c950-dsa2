@@ -1,5 +1,6 @@
 
 import Package
+from Package import PackageStatus
 from datetime import timedelta, datetime
 from Truck import Truck
 from HashTable import HashTable
