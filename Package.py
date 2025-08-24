@@ -10,7 +10,7 @@ class PackageStatus(Enum):
         DELAYED = "DELAYED"
 
 
-# This is the package class for the project
+# this is the package class for the project
 class Package:
 
     # intit method for the parameters of the package class
@@ -25,10 +25,10 @@ class Package:
 
         self.notes = notes
 
-        # Default value for it landing in the grouped list
+        # default value for it landing in the grouped list
         self.group_constrained = False
 
-        # This will be used to track the delivery time of the package (updated later)
+        # this will be used to track the delivery time of the package (updated later)
         self.delivery_time = None
         
         # store IDs of packages we have to group together
@@ -52,7 +52,7 @@ class Package:
         
         self.status = PackageStatus.DELIVERED
         
-        # Format time as HH:MM AM/PM
+        # format time as HH:MM AM/PM
         self.delivery_time = current_time.strftime("%I:%M %p")
         
         
@@ -64,10 +64,10 @@ class Package:
         
         self.status = PackageStatus.EN_ROUTE
         
-        # Format time as HH:MM AM/PM
+        # format time as HH:MM AM/PM
         self.load_time = current_time.strftime("%I:%M %p")
         
-        # String representation of the package object for easy debugging and display
+        # string representation of the package object for easy debugging and display
     def __str__(self):
         return f"Package ID: {self.id}, Address: {self.address}, Weight: {self.weight}kg, City: {self.city}, Zip: {self.zip_code}, Deadline: {self.deadline}, Status: {self.status.value}, Delivery Time: {self.delivery_time}"
 

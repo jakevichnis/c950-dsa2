@@ -79,7 +79,7 @@ class Truck:
         self.current_location = new_location
         self.mileage += distance
 
-        # Calculate time taken as timedelta based on speed
+        # calculate time taken as timedelta based on speed
         time_taken = timedelta(hours=distance / self.speed)
         self.current_time += time_taken
 

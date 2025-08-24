@@ -140,17 +140,3 @@ def run_delivery(truck, hashtable, distance_table):
         print(f"Truck {truck.truck_id} delivered package {package.package_id} at {truck.current_time.strftime('%I:%M %p')}")
     
     
-
-# ---------------------------------------------------
-#  Helpers (optional)
-# ---------------------------------------------------
-
-# TODO: helper function to calculate distance between two addresses
-# def calculate_distance(address1, address2, distance_table):
-#     return distance_table.lookup(address1, address2)
-
-# TODO: helper function to update package status + delivery timestamp
-# def deliver_package(truck, package, current_time):
-#     # mark package as delivered, update time, remove from truck
-#     pass
-
