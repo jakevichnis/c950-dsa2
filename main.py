@@ -128,14 +128,60 @@ def run_all_deliveries(trucks, hashtable, distance_table):
     
 
 
-def print_delivery_statuses(hashtable):
+def print_delivery_statuses(trucks, hashtable):
     """ prints final delivery statuses for all packages."""
-    for package_id in hashtable.keys():
-        package = hashtable.get(package_id)
-        time_str = package.delivery_time.strftime("%I:%M %p") if package.delivery_time else "N/A"
-        print(f"Package {package.package_id}: {package.status} at {time_str}")
+    # for package_id in hashtable.keys():
+    #    package = hashtable.get(package_id)
+    #    time_str = package.delivery_time.strftime("%I:%M %p") if package.delivery_time else "N/A"
+    #    print(f"Package {package.package_id}: {package.status} at {time_str}")
+
+    # had to refix this function a million times and eventually hard coded the times after errors
+    # spent way too much time on this trying to find the most modular way of getting this info printed
 
 
+    # predefined times to snapshot package statuses
+    snapshot_times = ["08:35", "09:25", "09:35", "10:25", "12:03", "13:12"]
+
+    # iterate through each snapshot time
+    for snap in snapshot_times:
+
+        # convert snapshot time string into a datetime object for comparison
+        snap_time = datetime.strptime(snap, "%H:%M")
+
+        # print header for current snapshot
+        print(f"\n--- Package Statuses at {snap} ---")
+
+        # iterate through each truck
+        for truck in trucks:
+
+            # print truck identifier
+            print(f"\nTruck {truck.truck_id}:")
+
+            # iterate through each package object on the truck
+            for package in truck.packages:  # now stores Package objects, not IDs
+
+                # convert load_time string to datetime if it exists, else max datetime
+                load_time = datetime.strptime(package.load_time, "%I:%M %p") if package.load_time else datetime.max
+
+                # convert delivery_time string to datetime if it exists, else max datetime
+                delivery_time = datetime.strptime(package.delivery_time, "%I:%M %p") if package.delivery_time else datetime.max
+
+                # determine package status based on snapshot time
+                if snap_time < load_time:
+                    status = "At Hub"
+                elif load_time <= snap_time < delivery_time:
+                    status = "En Route"
+                else:
+                    status = f"Delivered at {package.delivery_time}"
+
+                # print package ID and current status
+                print(f"Package {package.id}: {status}")
+
+    # calculate total mileage across all trucks
+    total_mileage = sum(truck.mileage for truck in trucks)
+
+    # print total mileage
+    print(f"\nTotal mileage traveled by all trucks: {total_mileage:.2f}")
 
 # main execution
 
@@ -157,4 +203,4 @@ if __name__ == "__main__":
     run_all_deliveries(trucks, hashtable, distance_table)
 
     # prints results
-    print_delivery_statuses(hashtable)
+    print_delivery_statuses(trucks, hashtable)

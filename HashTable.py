@@ -70,8 +70,8 @@ class HashTable:
                 return v
         
             # else, return None
-            else:
-                return None
+            
+        return None
 
     
 
