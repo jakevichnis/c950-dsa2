@@ -28,6 +28,9 @@ class DistanceTable:
         
         return self.distance_matrix[index1][index2]
 
-
+    # had to add this for better usage with my main.py
+    def load(self, addresses, distance_matrix):
+        self.address = addresses
+        self.distance_matrix = distance_matrix
 
 
