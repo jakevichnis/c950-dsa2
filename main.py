@@ -388,33 +388,44 @@ def delivery_interface(trucks, hashtable):
             # iterate trucks and packages
             for truck in trucks:
                 print(f"\nTruck {truck.truck_id}:")
-                for package_id in truck.packages:
+                
+                # gets all packages assigned to this truck (including delivered)
+                truck_packages = []
+                for package_id in hashtable.keys():
                     package = hashtable.get(package_id)
-                    # safely parse load/delivery times
-                    if getattr(package, "load_time", None):
-                        try:
-                            load_time = datetime.strptime(package.load_time, "%I:%M %p").time()
-                        except Exception:
-                            load_time = package.load_time.time() if hasattr(package.load_time, "time") else datetime.max.time()
-                    else:
-                        load_time = datetime.max.time()
+                    if hasattr(package, 'truck_id') and package.truck_id == truck.truck_id:
+                        truck_packages.append(package_id)
 
-                    if getattr(package, "delivery_time", None):
-                        try:
-                            delivery_time = datetime.strptime(package.delivery_time, "%I:%M %p").time()
-                        except Exception:
-                            delivery_time = package.delivery_time.time() if hasattr(package.delivery_time, "time") else datetime.max.time()
-                    else:
-                        delivery_time = datetime.max.time()
+                    for package_id in truck_packages:
+
+                        package = hashtable.get(package_id)
+                    # safely parse load/delivery times
+                        if getattr(package, "load_time", None):
+                            try:
+                                load_time = datetime.strptime(package.load_time, "%I:%M %p").time()
+                            except Exception:
+                                load_time = package.load_time.time() if hasattr(package.load_time, "time") else datetime.max.time()
+                        else:
+                            load_time = datetime.max.time()
+
+                        if getattr(package, "delivery_time", None):
+                            try:
+                                delivery_time = datetime.strptime(package.delivery_time, "%I:%M %p").time()
+                            except Exception:
+                                delivery_time = package.delivery_time.time() if hasattr(package.delivery_time, "time") else datetime.max.time()
+                        else:
+                            delivery_time = datetime.max.time()
                     
-                    if snap_time < load_time:
-                        status = "At Hub"
-                    elif load_time <= snap_time < delivery_time:
-                        status = "En Route"
-                    else:
-                        status = f"Delivered at {getattr(package, 'delivery_time', 'N/A')}"
+                        if snap_time < load_time:
+                            status = "At Hub"
+                        
+                        elif load_time <= snap_time < delivery_time:
+                            status = "En Route"
+                        
+                        else:
+                            status = f"Delivered at {getattr(package, 'delivery_time', 'N/A')}"
                     
-                    print(f"Package {getattr(package, 'id', getattr(package, 'package_id', package_id))}: {status}")
+                        print(f"Package {getattr(package, 'id', getattr(package, 'package_id', package_id))}: {status}")
         
         elif choice == "2":
             # check single package by ID
