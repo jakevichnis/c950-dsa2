@@ -14,53 +14,50 @@ import csv
 # implement function to select next package with earliest deadline
 def select_deadline_package(truck, hashtable, distance_table):
     """
-    Check truck's remaining packages for any with urgent deadlines.
+    Check truck's remaining packages for any urgent deadlines.
     If multiple, pick the one closest to current truck location.
     Return the selected package.
     """
 
+    earliest_package = None
+    earliest_deadline = None
+
     # creating a group list for the constraint of having those packages together
     grouped = []
-    
+
     # for loop iterating through each package on truck
     for package_id in truck.packages:
-        
+
         # hashtable of truck.packages, earliest deadline of = "at hub"
         package = hashtable.get(package_id)
-        
+
         # skip the package if already delivered
         if package.status in (PackageStatus.DELIVERED, PackageStatus.EN_ROUTE):
-            continue 
+            continue
 
         # skip the package if it's delayed
         if package.delayed_until and truck.current_time < package.delayed_until:
             continue
-        
-        # add package to 
+
+        # add package to grouped list if constrained
         if package.group_constrained:
             grouped.append(package)
 
-    # if package must be delivered with a group (six together rule) and the truck cannot
-    # deliver entire group in sequence (group members not on board or some are ineligible),
-    # this package status = ineligible for this pass and
-    
-
-        # if multiple, while loop greedy for package closest to truck current_location
-
-        
-        # sets variables to let us filter for what we actually want to select now
-        earliest_package = None
-        earliest_deadline = None
-        
-        # selection process
+        # selection process: pick earliest deadline
         if earliest_deadline is None or package.deadline < earliest_deadline:
             earliest_deadline = package.deadline
             earliest_package = package
-        
+
+    # fallback: if no package with deadline found, pick first eligible package
     if earliest_package:
         return earliest_package.package_id
     else:
-        return None
+        for package_id in truck.packages:
+            package = hashtable.get(package_id)
+            if package.status not in (PackageStatus.DELIVERED, PackageStatus.EN_ROUTE) and \
+               (not package.delayed_until or truck.current_time >= package.delayed_until):
+                return package.package_id
+        return None  # only happens if all packages are ineligible
 
             
 
@@ -74,38 +71,39 @@ def select_nearest_neighbor(truck, hashtable, distance_table):
     Return that package.
     """
     nearest_package = None
-
-    # start with max distance
     shortest_distance = float('inf')
 
-
     for package_id in truck.packages:
-        
         # hashtable of truck.packages, earliest deadline of = "at hub"
         package = hashtable.get(package_id)
-        
+
         # skip the package if already delivered
         if package.status in (PackageStatus.DELIVERED, PackageStatus.EN_ROUTE):
-            continue 
+            continue
 
         # skip the package if it's delayed
         if package.delayed_until and truck.current_time < package.delayed_until:
             continue
 
-        # the heart of the greedy algorithm- at each iteration, pick the closest package
+        # the heart of the greedy algorithm- pick the closest package
         distance_to_package = get_distance(truck.current_location, package.address, distance_table)
 
-        # if there's a new shorter distance, reset location direction to this 
+        # if there's a new shorter distance, reset location direction to this
         if distance_to_package < shortest_distance:
             shortest_distance = distance_to_package
             nearest_package = package
 
-
-        # lock in on package selection destination
+    # fallback: pick first eligible package if all distances were skipped
     if nearest_package:
         return nearest_package.package_id
     else:
-        return None
+        for package_id in truck.packages:
+            package = hashtable.get(package_id)
+            if package.status not in (PackageStatus.DELIVERED, PackageStatus.EN_ROUTE) and \
+               (not package.delayed_until or truck.current_time >= package.delayed_until):
+                return package.package_id
+        return None  # only happens if all packages are ineligible
+
 
 
 
@@ -124,6 +122,10 @@ def run_delivery(truck, hashtable, distance_table):
         package_id = select_deadline_package(truck, hashtable, distance_table)
         if package_id is None:
             package_id = select_nearest_neighbor(truck, hashtable, distance_table)
+        
+        if package_id is None:
+            # safety check to see if all remaining packages are delivered or delayed...
+            break
 
         # retrieves package object from hashtable
         package = hashtable.get(package_id)

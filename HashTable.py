@@ -98,6 +98,13 @@ class HashTable:
             return False
 
 
+    def keys(self):
+        """Return a list of keys present in the table."""
+        result = []
+        for bucket in self.table:
+            for k, _ in bucket:
+                result.append(k)
+        return result
 
 
     # # Loop through buckets and print contents in a readable way    

@@ -31,20 +31,25 @@ class Truck:
         Load a package onto the truck by its ID.
         If truck is at capacity, raise an error.
         """
+
+        if package_id is None:
+            raise ValueError(f"Tried to load None into Truck {self.truck_id}")
+
         if len(self.packages) >= self.capacity:
             raise Exception(f"Truck {self.truck_id} is at full capacity. Cannot load more packages.")
             
-
+        self.packages.append(package_id)
         # automatically update the package's status to en_route and record the load time
         # after grabbing the package_id from the hash table
         package = hashtable.get(package_id)
+        package.truck_id = self.truck_id
         package.mark_en_route(self.current_time)
 
 
         # ended up being redundant
         # package.load_time = self.current_time
         
-        self.packages.append(package_id)
+        
         
 
 
@@ -54,6 +59,8 @@ class Truck:
         Delivers package from the truck by its ID.
         If the package is not found, it raises an error.
         """
+
+        
 
         # checks to see if the package_id is in the package list
         if package_id not in self.packages:

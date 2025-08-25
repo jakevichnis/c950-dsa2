@@ -16,6 +16,7 @@ class Package:
     # intit method for the parameters of the package class
     def __init__(self, package_id, address, weight, city, zip_code, deadline, status=PackageStatus.AT_HUB, notes=None):
         self.id = package_id
+        self.package_id = package_id
         self.address = address
         self.weight = weight
         self.city = city
