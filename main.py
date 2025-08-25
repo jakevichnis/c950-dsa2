@@ -1,4 +1,4 @@
-# Jake Vichnis Student ID: 012633070
+
 
 
 from datetime import datetime
@@ -14,40 +14,78 @@ import pandas as pd # type: ignore
 # initialize data structures
 
 def load_packages(csv_file):
-    """Load packages from WGUPS_Package_File.csv into a hash table."""
+    """Load packages from WGUPS_Package_File.csv into a hash table (robust to messy headers)."""
     hashtable = HashTable()
+
     
+
     with open(csv_file, newline='') as f:
-        reader = csv.DictReader(f)  # lets us access columns by header name directly
-        for row in reader:
-            # skip rows without numeric package IDs
+        rows = list(csv.reader(f))
+
+    # Find header row by looking for 'Package' and 'Address'
+    header_idx = None
+    for i, row in enumerate(rows):
+        joined = ",".join(cell.strip().lower() for cell in row)
+        if "package" in joined and "address" in joined:
+            header_idx = i
+            break
+    if header_idx is None:
+        raise ValueError("Could not find header row in CSV")
+
+    header = [cell.replace("\n", " ").strip().lower() for cell in rows[header_idx]]
+
+    # Helper to find column index
+    def find_col(name):
+        for j, h in enumerate(header):
+            if name.lower() in h:
+                return j
+        return None
+
+    idx_pkg = find_col("package")
+    idx_address = find_col("address")
+    idx_city = find_col("city")
+    idx_zip = find_col("zip")
+    idx_deadline = find_col("deadline")
+    idx_weight = find_col("weight")
+    idx_notes = find_col("special") or find_col("notes")
+
+    # Process each row after header
+    for row in rows[header_idx + 1:]:
+        if not any(cell.strip() for cell in row):
+            continue
+
+        try:
+            pkg_id = int(row[idx_pkg])
+        except Exception:
+            continue
+
+        address = row[idx_address].strip() if idx_address is not None else ""
+        city = row[idx_city].strip() if idx_city is not None else ""
+        zip_code = row[idx_zip].strip() if idx_zip is not None else ""
+        weight = row[idx_weight].strip() if idx_weight is not None else ""
+        notes = row[idx_notes].strip() if idx_notes is not None else ""
+
+        # Parse deadline
+        raw_deadline = row[idx_deadline].strip() if idx_deadline is not None else ""
+        if raw_deadline.upper() in ("", "EOD"):
+            deadline = datetime.max.time()
+        else:
             try:
-                pkg_id = int(row['Package ID'])
+                deadline = datetime.strptime(raw_deadline, "%I:%M %p").time()
             except Exception:
-                continue
-
-            # parse deadline
-            raw_deadline = row.get('Deadline', '').strip().upper()
-            if raw_deadline in ("", "EOD"):
                 deadline = datetime.max.time()
-            else:
-                try:
-                    deadline = datetime.strptime(raw_deadline, "%I:%M %p").time()
-                except Exception:
-                    deadline = datetime.max.time()
 
-            pkg = Package(
-                package_id=pkg_id,
-                address=row.get('Address', '').strip(),
-                city=row.get('City', '').strip(),
-                zip_code=row.get('Zip', '').strip(),
-                weight=row.get('Weight', '').strip(),
-                deadline=deadline,
-                status=PackageStatus.AT_HUB,
-                notes=row.get('Special Notes', '').strip()
-            )
+        pkg = Package(
+            package_id = pkg_id,
+            address = address,
+            city = city,
+            zip_code = zip_code,
+            weight = weight,
+            deadline = deadline,
+            status = PackageStatus.AT_HUB,
+            notes = notes
+        )
 
-        # insert into hash table using the package.id attribute (your code expects IDs stored)
         hashtable.insert(pkg.id, pkg)
 
     return hashtable
@@ -79,7 +117,7 @@ def load_packages(csv_file):
 #     return distance_table
 
 def load_distance_table(csv_file):
-    """Load addresses + distance matrix from WGUPS CSV (assumes first row is header, no extra metadata)."""
+    """Load addresses + distance matrix from WGUPS CSV (finds the actual data rows)."""
     addresses = []
     matrix = []
 
@@ -87,20 +125,52 @@ def load_distance_table(csv_file):
         reader = csv.reader(f)
         rows = list(reader)
 
-    # first row is assumed header with addresses
-    addresses = [cell.strip().strip('"') for cell in rows[0][1:]]
+    # Find the header row by looking for "DISTANCE BETWEEN HUBS"
+    header_row_idx = None
+    for i, row in enumerate(rows):
+        if any("DISTANCE BETWEEN HUBS" in str(cell) for cell in row):
+            header_row_idx = i
+            break
+    
+    if header_row_idx is None:
+        raise ValueError("Could not find header row in distance CSV")
 
-    # remaining rows are numeric distances
-    for row in rows[1:]:
-        nums = []
-        for cell in row[1:]:
+    # The actual addresses are in the row after "DISTANCE BETWEEN HUBS"
+    # Look for the row that contains the hub address
+    data_start_idx = None
+    for i in range(header_row_idx + 1, len(rows)):
+        if any("Western Governors University" in str(cell) for cell in rows[i]):
+            data_start_idx = i
+            break
+    
+    if data_start_idx is None:
+        raise ValueError("Could not find data start row in distance CSV")
+
+    # Extract addresses and build matrix
+    for i in range(data_start_idx, len(rows)):
+        row = rows[i]
+        if len(row) < 2:  # Skip empty rows
+            continue
+        
+        # First column is the address
+        address = row[0].strip().strip('"')
+        if not address:  # Skip empty addresses
+            continue
+            
+        addresses.append(address)
+        
+        # Rest of the columns are distances
+        distances = []
+        for j in range(2, len(row)):  # Skip first column (address) and second column (short name)
             try:
-                nums.append(float(cell.strip()))
-            except Exception:
-                nums.append(0.0)
-        matrix.append(nums)
+                dist = float(row[j].strip()) if row[j].strip() else 0.0
+                distances.append(dist)
+            except ValueError:
+                distances.append(0.0)
+        
+        matrix.append(distances)
 
-    # load into DistanceTable
+    # Load into DistanceTable
     distance_table = DistanceTable()
     distance_table.load(addresses, matrix)
     return distance_table
@@ -376,11 +446,13 @@ if __name__ == "__main__":
     # arranges and signals all our packages to all our trucks
     assign_packages_to_trucks(trucks, hashtable)
 
-    # start command-line interface for any adhoc checks
-    delivery_interface(trucks, hashtable)
+    
 
     # literally runs the entire truck delivery service
     run_all_deliveries(trucks, hashtable, distance_table)
+
+    # start command-line interface for any adhoc checks
+    delivery_interface(trucks, hashtable)
 
     # prints required snapshots and total mileage
     print_delivery_statuses(trucks, hashtable)
