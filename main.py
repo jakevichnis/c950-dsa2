@@ -1,6 +1,7 @@
 
 
 
+
 from datetime import datetime
 from Package import Package, PackageStatus
 from Truck import Truck
@@ -16,8 +17,6 @@ import pandas as pd # type: ignore
 def load_packages(csv_file):
     """Load packages from WGUPS_Package_File.csv into a hash table (robust to messy headers)."""
     hashtable = HashTable()
-
-    
 
     with open(csv_file, newline='') as f:
         rows = list(csv.reader(f))
@@ -41,13 +40,13 @@ def load_packages(csv_file):
                 return j
         return None
 
-    idx_pkg = find_col("package")
-    idx_address = find_col("address")
-    idx_city = find_col("city")
-    idx_zip = find_col("zip")
-    idx_deadline = find_col("deadline")
-    idx_weight = find_col("weight")
-    idx_notes = find_col("special") or find_col("notes")
+    idx_pkg =       find_col("package")
+    idx_address =   find_col("address")
+    idx_city =      find_col("city")
+    idx_zip =       find_col("zip")
+    idx_deadline =  find_col("deadline")
+    idx_weight =    find_col("weight")
+    idx_notes =     find_col("special") or find_col("notes")
 
     # Process each row after header
     for row in rows[header_idx + 1:]:
@@ -86,35 +85,30 @@ def load_packages(csv_file):
             notes = notes
         )
 
+        # process special notes to set constraints
+        if notes:
+            notes_lower = notes.lower()
+            
+            # delayed packages that can't leave before 9:05 AM
+            if "delayed" in notes_lower or "9:05" in notes_lower:
+                pkg.delayed_until = datetime.strptime("09:05 AM", "%I:%M %p")
+            
+            # package 9 address correction at 10:20 AM
+            if pkg_id == 9:
+                pkg.delayed_until = datetime.strptime("10:20 AM", "%I:%M %p")
+            
+            # packages that must be delivered together
+            if "must be delivered with" in notes_lower or "delivered with" in notes_lower:
+                pkg.group_constrained = True
+            
+            # packages that can only be on truck 2
+            if "can only be on truck 2" in notes_lower or "truck 2" in notes_lower:
+                pkg.truck_restriction = 2
+
         hashtable.insert(pkg.id, pkg)
 
     return hashtable
 
-
-
-# def load_distance_table(csv_file):
-#     """LOads the distance table from csv or other source."""
-#
-#     # initialize distance table here
-#     distance_table = DistanceTable()
-#     addresses = []
-#     matrix = []
-#
-#     # file handler
-#     with open(csv_file, newline='') as f:
-#         reader = csv.reader(f)
-#
-#         # reads all rows into memory
-#         rows = list(reader)
-#
-#         # first column contains addresses, rest are distances
-#         for row in rows:
-#             addresses.append(row[0])                                  # address at column 0
-#             matrix.append([float(x) if x else 0.0 for x in row[1:]])  # convert blanks to 0.0
-#
-#     # save into distanceTable object
-#     distance_table.load(addresses, matrix)
-#     return distance_table
 
 def load_distance_table(csv_file):
     """Load addresses + distance matrix from WGUPS CSV (finds the actual data rows)."""
@@ -176,23 +170,22 @@ def load_distance_table(csv_file):
     return distance_table
 
 
-
-
-# initialize Trucks
-
+# initialize Trucks with driver constraint logic
 def initialize_trucks():
-    """Create our truck objects."""
+    """Create our truck objects with driver availability logic."""
     # ensure trucks start with a real datetime object for proper time math/strftime usage
     start_dt = datetime.strptime("08:00 AM", "%I:%M %p")
+    
+    # truck 1 and 2 get drivers immediately (start at 8:00 AM)
     truck1 = Truck(truck_id = 1, start_time = start_dt)
     truck2 = Truck(truck_id = 2, start_time = start_dt)
-    truck3 = Truck(truck_id = 3, start_time = start_dt)
+    
+    # truck 3 waits for a driver (will be updated later)
+    # set to None initially to indicate no driver available
+    truck3 = Truck(truck_id = 3, start_time = None)
+    
     return [truck1, truck2, truck3]
 
-
-
-
-# assign packages to Trucks
 
 # assign packages to Trucks
 def assign_packages_to_trucks(trucks, hashtable):
@@ -228,17 +221,17 @@ def assign_packages_to_trucks(trucks, hashtable):
 
         # match on constraint "type" and use safe_load to avoid overfilling a truck
         match True:
-            case _ if getattr(package, "delayed_until", None):
+            case _ if hasattr(package, "delayed_until") and package.delayed_until:
                 # delayed = truck 2 (try truck2 first, fallback to others)
                 if not safe_load(truck2, package.package_id, hashtable):
                     raise Exception(f"All trucks full while assigning delayed package {package.package_id}")
 
-            case _ if getattr(package, "group_constrained", False):
+            case _ if hasattr(package, "group_constrained") and package.group_constrained:
                 # grouped constraint = truck 1 (try truck1 first)
                 if not safe_load(truck1, package.package_id, hashtable):
                     raise Exception(f"All trucks full while assigning grouped package {package.package_id}")
 
-            case _ if getattr(package, "truck_restriction", None) == 2:
+            case _ if hasattr(package, "truck_restriction") and package.truck_restriction == 2:
                 # has to explicitly be on truck 2... try truck2 then fail hard if full
                 if not safe_load(truck2, package.package_id, hashtable):
                     raise Exception(f"Package {package.package_id} requires truck 2 but truck 2 is full and no alternative available")
@@ -249,19 +242,47 @@ def assign_packages_to_trucks(trucks, hashtable):
                     raise Exception(f"All trucks full while assigning package {package.package_id}")
 
 
-
-# run delivery
-
-
+# run delivery with driver constraint logic
 def run_all_deliveries(trucks, hashtable, distance_table):
-    """runs the delivery loop for all trucks."""
-    for truck in trucks:
+    """runs the delivery loop for all trucks with 2-driver constraint."""
+    
+    truck1, truck2, truck3 = trucks
+    
+    # only truck 1 and truck 2 can start initially (they have the 2 drivers)
+    available_trucks = [truck1, truck2]
+    
+    # run deliveries for trucks with drivers
+    for truck in available_trucks:
         # ensure truck has packages and all IDs are valid before running delivery
         if hasattr(truck, "packages") and truck.packages:
             valid_packages = [pid for pid in truck.packages if pid is not None]
             truck.packages = valid_packages
             routing.run_delivery(truck, hashtable, distance_table)
-
+    
+    # determine which truck finishes first to free up a driver for truck 3
+    if truck1.current_time <= truck2.current_time:
+        first_free_driver_time = truck1.current_time
+        print(f"Driver from Truck 1 becomes available at {first_free_driver_time.strftime('%I:%M %p')}")
+    else:
+        first_free_driver_time = truck2.current_time
+        print(f"Driver from Truck 2 becomes available at {first_free_driver_time.strftime('%I:%M %p')}")
+    
+    # truck 3 can now start with the freed driver
+    # but must wait until at least 9:05 AM for delayed packages anyway
+    min_start_time = datetime.strptime("09:05 AM", "%I:%M %p")
+    truck3_start_time = max(first_free_driver_time, min_start_time)
+    
+    # update truck 3's start time and current time
+    truck3.current_time = truck3_start_time
+    truck3.start_time = truck3_start_time
+    
+    print(f"Truck 3 starts deliveries at {truck3_start_time.strftime('%I:%M %p')}")
+    
+    # now run delivery for truck 3
+    if hasattr(truck3, "packages") and truck3.packages:
+        valid_packages = [pid for pid in truck3.packages if pid is not None]
+        truck3.packages = valid_packages
+        routing.run_delivery(truck3, hashtable, distance_table)
 
 
 def print_delivery_statuses(trucks, hashtable):
@@ -332,7 +353,6 @@ def print_delivery_statuses(trucks, hashtable):
 
     # print total mileage
     print(f"\nTotal mileage traveled by all trucks: {total_mileage:.2f}")
-
 
 
 def delivery_interface(trucks, hashtable):
@@ -426,9 +446,7 @@ def delivery_interface(trucks, hashtable):
             print("Invalid choice. Enter a number between 1-4.")
 
 
-
 # main execution
-
 if __name__ == "__main__":
 
     # quick starting message so we can see the script ran
@@ -446,9 +464,7 @@ if __name__ == "__main__":
     # arranges and signals all our packages to all our trucks
     assign_packages_to_trucks(trucks, hashtable)
 
-    
-
-    # literally runs the entire truck delivery service
+    # literally runs the entire truck delivery service (with driver constraint)
     run_all_deliveries(trucks, hashtable, distance_table)
 
     # start command-line interface for any adhoc checks
@@ -456,5 +472,3 @@ if __name__ == "__main__":
 
     # prints required snapshots and total mileage
     print_delivery_statuses(trucks, hashtable)
-
-    
