@@ -127,8 +127,8 @@ def run_delivery(truck, hashtable, distance_table):
         
         # travel logistics of how the distance is proportional to where the truck is
         distance = get_distance(truck.current_location, package.address, distance_table)
-        print(f"DEBUG: From '{truck.current_location}' to '{package.address}' = {distance} miles")
-        print(f"DEBUG: Available addresses in distance table: {distance_table.addresses[:5]}...")  # show first 5
+        # print(f"DEBUG: From '{truck.current_location}' to '{package.address}' = {distance} miles")
+        # print(f"DEBUG: Available addresses in distance table: {distance_table.addresses[:5]}...")  # show first 5
         time_taken = timedelta(hours = distance / truck.speed)
 
         # logging the actual process of delivering the package, first by truck then by package

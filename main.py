@@ -450,7 +450,7 @@ def delivery_interface(trucks, hashtable):
 if __name__ == "__main__":
 
     # quick starting message so we can see the script ran
-    print("scripting running")
+    # print("scripting running")
 
     # parse the "packages" data from the xlsx into the hash table
     hashtable = load_packages("WGUPS_Package_File.csv")
