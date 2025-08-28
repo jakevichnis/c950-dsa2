@@ -1,4 +1,4 @@
-
+# Jake Vichnis Student ID: 012633070
 
 
 
@@ -97,8 +97,12 @@ def load_packages(csv_file):
             if pkg_id == 9:
                 pkg.delayed_until = datetime.strptime("10:20 AM", "%I:%M %p")
             
-            # packages that must be delivered together
+            # packages that must be delivered together (13, 14, 15, 16, 19, 20)
             if "must be delivered with" in notes_lower or "delivered with" in notes_lower:
+                pkg.group_constrained = True
+            
+            # also mark packages 13, 19 as group constrained (they're mentioned as companions)
+            if pkg_id in [13, 19]:
                 pkg.group_constrained = True
             
             # packages that can only be on truck 2
@@ -426,8 +430,13 @@ def delivery_interface(trucks, hashtable):
                     else:
                         status = f"Delivered at {getattr(package, 'delivery_time', 'N/A')}"
                 
-                    print(f"Package {getattr(package, 'id', getattr(package, 'package_id', package_id))}: {status}")
-        
+                    # print(f"Package {getattr(package, 'id', getattr(package, 'package_id', package_id))}: {status}")
+                    
+                    pkg_id = getattr(package, 'id', getattr(package, 'package_id', package_id))
+                    print(f"Package {pkg_id} | {package.address} | {status} | {package.deadline} | Truck {truck.truck_id}")
+
+
+
         elif choice == "2":
             # checks single package by ID
             package_id_input = input("Enter package ID: ").strip()

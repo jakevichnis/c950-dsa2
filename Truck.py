@@ -45,8 +45,15 @@ class Truck:
         package.truck_id = self.truck_id
         
         # only mark en_route if truck has a start time (driver available)
-        if self.current_time is not None:
-            package.mark_en_route(self.current_time)
+        # if self.current_time is not None:
+        #    package.mark_en_route(self.current_time)
+        
+        # Don't mark en_route during loading - packages stay "at hub" until truck starts moving
+        # En route status will be set when deliveries actually begin
+        pass    
+            
+            
+            
         # ended up being redundant
         # package.load_time = self.current_time
         
