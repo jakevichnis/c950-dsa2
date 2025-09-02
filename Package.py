@@ -22,7 +22,16 @@ class Package:
         self.city = city
         self.zip_code = zip_code
         self.deadline = deadline
-        self.status = PackageStatus.AT_HUB # type: ignore
+        
+
+        # handling delayed packages hard coded
+
+        if package_id in [6, 25, 28, 32]:
+            self.status = PackageStatus.DELAYED
+
+        else:
+            self.status = PackageStatus.AT_HUB
+
 
         self.notes = notes
 

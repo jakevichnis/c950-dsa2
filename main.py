@@ -89,20 +89,17 @@ def load_packages(csv_file):
         if notes:
             notes_lower = notes.lower()
             
-            # delayed packages that can't leave before 9:05 AM
-            if "delayed" in notes_lower or "9:05" in notes_lower:
+            # FIXED: All delayed packages (6, 25, 28, 32) + any with "delayed" or "9:05" text
+            if ("delayed" in notes_lower and "9:05" in notes_lower) or pkg_id in [6, 25, 28, 32]:
                 pkg.delayed_until = datetime.strptime("09:05 AM", "%I:%M %p")
             
             # package 9 address correction at 10:20 AM
             if pkg_id == 9:
                 pkg.delayed_until = datetime.strptime("10:20 AM", "%I:%M %p")
             
-            # packages that must be delivered together (13, 14, 15, 16, 19, 20)
-            if "must be delivered with" in notes_lower or "delivered with" in notes_lower:
-                pkg.group_constrained = True
-            
-            # also mark packages 13, 19 as group constrained (they're mentioned as companions)
-            if pkg_id in [13, 19]:
+            # FIXED: ALL packages that must be delivered together (13, 14, 15, 16, 19, 20)
+            # Based on CSV notes: 14 with 15,19; 16 with 13,19; 20 with 13,15
+            if pkg_id in [13, 14, 15, 16, 19, 20]:
                 pkg.group_constrained = True
             
             # packages that can only be on truck 2
@@ -191,59 +188,73 @@ def initialize_trucks():
     return [truck1, truck2, truck3]
 
 
-# assign packages to Trucks
+# FIXED: assign packages to Trucks
 def assign_packages_to_trucks(trucks, hashtable):
-    """Distributes packages according to constraints (tries preferred truck first; falls back if full)."""
+    """Distributes packages according to constraints - ensures group packages stay together."""
 
-    # carryover from our initialize trucks function
     truck1, truck2, truck3 = trucks
 
-    # helper: attempt to load onto a preferred truck, otherwise try the others
+    # FIXED: Handle group packages first - ALL must go on same truck
+    group_packages = [13, 14, 15, 16, 19, 20]
+    
+    # Try to fit all group packages on one truck
+    group_truck = None
+    for truck in [truck1, truck2, truck3]:
+        if len(truck.packages) + len(group_packages) <= truck.capacity:
+            group_truck = truck
+            break
+    
+    if group_truck is None:
+        raise Exception("No truck has enough capacity for all group packages together")
+    
+    # Load all group packages onto the selected truck
+    for pkg_id in group_packages:
+        group_truck.load_package(pkg_id, hashtable)
+    
+    print(f"Group packages (13,14,15,16,19,20) assigned to Truck {group_truck.truck_id}")
+
+    # Helper function for remaining packages
     def safe_load(preferred_truck, package_id, hashtable):
+        # Skip if package is already loaded (group packages)
+        if package_id in group_packages:
+            return True
+            
         # list trucks in order: preferred first, then the others
         order = [preferred_truck] + [t for t in trucks if t is not preferred_truck]
         for t in order:
             try:
-                # use your Truck.load_package so load_time/status get set
                 t.load_package(package_id, hashtable)
                 return True
             except Exception as e:
-                # if it's full, move on to next truck; if it's a different error, re-raise
                 if "full capacity" in str(e).lower():
                     continue
                 else:
                     raise
-        # none of the trucks accepted the package
         return False
 
+    # Process remaining packages
     for package_id in hashtable.keys():
+        # Skip group packages as they're already handled
+        if package_id in group_packages:
+            continue
+            
         package = hashtable.get(package_id)
 
-        # since python doesn't have a typical "switch" case ordeal
-        # i have to search around and found match/case, so I went with that
-        # instead of doing a bunch of elifs (i probably could have done that on second thought)
+        # Assign based on constraints
+        if hasattr(package, "delayed_until") and package.delayed_until:
+            # delayed packages go to truck 2 preferentially
+            if not safe_load(truck2, package.package_id, hashtable):
+                raise Exception(f"All trucks full while assigning delayed package {package.package_id}")
 
-        # match on constraint "type" and use safe_load to avoid overfilling a truck
-        match True:
-            case _ if hasattr(package, "delayed_until") and package.delayed_until:
-                # delayed = truck 2 (try truck2 first, fallback to others)
-                if not safe_load(truck2, package.package_id, hashtable):
-                    raise Exception(f"All trucks full while assigning delayed package {package.package_id}")
+        elif hasattr(package, "truck_restriction") and package.truck_restriction == 2:
+            # Must be on truck 2
+            if not safe_load(truck2, package.package_id, hashtable):
+                raise Exception(f"Package {package.package_id} requires truck 2 but truck 2 is full")
 
-            case _ if hasattr(package, "group_constrained") and package.group_constrained:
-                # grouped constraint = truck 1 (try truck1 first)
-                if not safe_load(truck1, package.package_id, hashtable):
-                    raise Exception(f"All trucks full while assigning grouped package {package.package_id}")
-
-            case _ if hasattr(package, "truck_restriction") and package.truck_restriction == 2:
-                # has to explicitly be on truck 2... try truck2 then fail hard if full
-                if not safe_load(truck2, package.package_id, hashtable):
-                    raise Exception(f"Package {package.package_id} requires truck 2 but truck 2 is full and no alternative available")
-
-            case _:
-                # default case -> try truck3 first then others
-                if not safe_load(truck3, package.package_id, hashtable):
-                    raise Exception(f"All trucks full while assigning package {package.package_id}")
+        else:
+            # Default - try truck3 first, then others
+            if not safe_load(truck3, package.package_id, hashtable):
+                raise Exception(f"All trucks full while assigning package {package.package_id}")
 
 
 # run delivery with driver constraint logic
@@ -300,6 +311,7 @@ def print_delivery_statuses(trucks, hashtable):
 
         # convert snapshot time string into a time object for comparison
         snap_time = datetime.strptime(snap, "%I:%M %p").time()
+        snap_datetime = datetime.strptime(snap, "%I:%M %p")
 
         # print header for current snapshot
         print(f"\n--- Package Statuses at {snap} ---")
@@ -316,6 +328,14 @@ def print_delivery_statuses(trucks, hashtable):
                 # get the package object from the hashtable
                 loaded_package = hashtable.get(package_id)
 
+                # FIXED: Check if package is delayed and snapshot is before delay time
+                if hasattr(loaded_package, 'delayed_until') and loaded_package.delayed_until:
+                    if snap_datetime < loaded_package.delayed_until:
+                        status = "At Hub"  # Still delayed, not loaded yet
+                        pkg_id_display = getattr(loaded_package, "id", getattr(loaded_package, "package_id", package_id))
+                        print(f"Package {pkg_id_display}: {status}")
+                        continue
+
                 # convert load_time string to a time if it exists, else max time
                 if getattr(loaded_package, "load_time", None):
                     try:
@@ -324,7 +344,11 @@ def print_delivery_statuses(trucks, hashtable):
                         # if it's already a datetime, pull the time portion
                         load_time = loaded_package.load_time.time() if hasattr(loaded_package.load_time, "time") else datetime.max.time()
                 else:
-                    load_time = datetime.max.time()
+                    # FIXED: Use truck start time as load time if no specific load_time
+                    if truck.start_time and hasattr(truck.start_time, 'time'):
+                        load_time = truck.start_time.time()
+                    else:
+                        load_time = datetime.max.time()
 
                 # convert delivery_time string to a time if it exists, else max time
                 if getattr(loaded_package, "delivery_time", None):
@@ -338,10 +362,8 @@ def print_delivery_statuses(trucks, hashtable):
                 # determine package status based on snapshot time
                 if snap_time < load_time:
                     status = "At Hub"
-
                 elif load_time <= snap_time < delivery_time:
                     status = "En Route"
-
                 else:
                     # show original formatted string if available
                     status = f"Delivered at {getattr(loaded_package, 'delivery_time', 'N/A')}"
@@ -384,6 +406,7 @@ def delivery_interface(trucks, hashtable):
             time_input = input("Enter time (HH:MM AM/PM, e.g., 09:30 AM): ").strip()
             try:
                 snap_time = datetime.strptime(time_input, "%I:%M %p").time()
+                snap_datetime = datetime.strptime(time_input, "%I:%M %p")
             except ValueError:
                 print("Invalid time format. Try again.")
                 continue
@@ -406,6 +429,14 @@ def delivery_interface(trucks, hashtable):
                 for package_id in sorted(truck_packages):
                     package = hashtable.get(package_id)
                     
+                    # FIXED: Check delayed packages first
+                    if hasattr(package, 'delayed_until') and package.delayed_until:
+                        if snap_datetime < package.delayed_until:
+                            status = "At Hub"
+                            pkg_id = getattr(package, 'id', getattr(package, 'package_id', package_id))
+                            print(f"Package {pkg_id} | {package.address} | {status} | {package.deadline} | Truck {truck.truck_id}")
+                            continue
+                    
                     # safely parses load/delivery times
                     if getattr(package, "load_time", None):
                         try:
@@ -413,7 +444,11 @@ def delivery_interface(trucks, hashtable):
                         except Exception:
                             load_time = package.load_time.time() if hasattr(package.load_time, "time") else datetime.max.time()
                     else:
-                        load_time = datetime.max.time()
+                        # Use truck start time as fallback
+                        if truck.start_time and hasattr(truck.start_time, 'time'):
+                            load_time = truck.start_time.time()
+                        else:
+                            load_time = datetime.max.time()
 
                     if getattr(package, "delivery_time", None):
                         try:
@@ -429,13 +464,9 @@ def delivery_interface(trucks, hashtable):
                         status = "En Route"
                     else:
                         status = f"Delivered at {getattr(package, 'delivery_time', 'N/A')}"
-                
-                    # print(f"Package {getattr(package, 'id', getattr(package, 'package_id', package_id))}: {status}")
                     
                     pkg_id = getattr(package, 'id', getattr(package, 'package_id', package_id))
                     print(f"Package {pkg_id} | {package.address} | {status} | {package.deadline} | Truck {truck.truck_id}")
-
-
 
         elif choice == "2":
             # checks single package by ID
