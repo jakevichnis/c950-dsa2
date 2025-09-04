@@ -282,6 +282,40 @@ def run_all_deliveries(trucks, hashtable, distance_table):
         first_free_driver_time = truck2.current_time
         print(f"Driver from Truck 2 becomes available at {first_free_driver_time.strftime('%I:%M %p')}")
     
+    # NEW: Handle delayed packages at 9:05 AM
+    delayed_available_time = datetime.strptime("09:05 AM", "%I:%M %p")
+    
+    # Check if any delayed packages need to be delivered
+    delayed_packages = []
+    for package_id in hashtable.keys():
+        package = hashtable.get(package_id)
+        if hasattr(package, 'delayed_until') and package.delayed_until:
+            if package.delayed_until <= delayed_available_time and package.status != PackageStatus.DELIVERED:
+                delayed_packages.append(package_id)
+    
+    # If there are delayed packages, send a truck back out
+    if delayed_packages:
+        # Use truck2 for delayed packages (it should be available)
+        truck2.current_time = max(truck2.current_time, delayed_available_time)
+        truck2.current_location = "4001 South 700 East"  # Reset to hub
+        
+        # Update package 9's address if it's time
+        pkg9 = hashtable.get(9)
+        if pkg9 and hasattr(pkg9, 'delayed_until'):
+            address_correction_time = datetime.strptime("10:20 AM", "%I:%M %p")
+            if truck2.current_time >= address_correction_time:
+                # Update to correct address
+                pkg9.address = "410 S State St"  # Correct address
+                print(f"Package 9 address corrected at {truck2.current_time.strftime('%I:%M %p')}")
+        
+        # Clear truck2's old packages and load delayed ones
+        truck2.packages = delayed_packages
+        
+        print(f"Truck 2 going back out at {truck2.current_time.strftime('%I:%M %p')} for delayed packages: {delayed_packages}")
+        
+        # Run delivery for delayed packages
+        routing.run_delivery(truck2, hashtable, distance_table)
+    
     # truck 3 can now start with the freed driver
     # but must wait until at least 9:05 AM for delayed packages anyway
     min_start_time = datetime.strptime("09:05 AM", "%I:%M %p")
@@ -331,7 +365,13 @@ def print_delivery_statuses(trucks, hashtable):
                 # FIXED: Check if package is delayed and snapshot is before delay time
                 if hasattr(loaded_package, 'delayed_until') and loaded_package.delayed_until:
                     if snap_datetime < loaded_package.delayed_until:
-                        status = "At Hub"  # Still delayed, not loaded yet
+                        # Show appropriate delayed status instead of "At Hub"
+                        if package_id in [6, 25, 28, 32]:
+                            status = "Delayed - En Route to Hub"  # These are on a plane
+                        elif package_id == 9:
+                            status = "At Hub - Awaiting Address Correction"  # Different delay reason
+                        else:
+                            status = "DELAYED"
                         pkg_id_display = getattr(loaded_package, "id", getattr(loaded_package, "package_id", package_id))
                         print(f"Package {pkg_id_display}: {status}")
                         continue
@@ -432,7 +472,7 @@ def delivery_interface(trucks, hashtable):
                     # FIXED: Check delayed packages first
                     if hasattr(package, 'delayed_until') and package.delayed_until:
                         if snap_datetime < package.delayed_until:
-                            status = "At Hub"
+                            status = "DELAYED"
                             pkg_id = getattr(package, 'id', getattr(package, 'package_id', package_id))
                             print(f"Package {pkg_id} | {package.address} | {status} | {package.deadline} | Truck {truck.truck_id}")
                             continue

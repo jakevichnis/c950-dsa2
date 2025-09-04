@@ -31,6 +31,9 @@ def select_deadline_package(truck, hashtable, distance_table):
         if package.status == PackageStatus.DELIVERED:
             continue
 
+        if package.status == PackageStatus.DELAYED:
+            continue
+
         # FIXED: Add safe checks for constraint attributes
         if hasattr(package, 'delayed_until') and package.delayed_until and truck.current_time < package.delayed_until:
             continue
