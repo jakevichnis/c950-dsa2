@@ -1,7 +1,3 @@
-# Jake Vichnis Student ID: 012633070
-
-
-
 from datetime import datetime
 from Package import Package, PackageStatus
 from Truck import Truck
@@ -111,6 +107,45 @@ def load_packages(csv_file):
     return hashtable
 
 
+def get_unassignable_packages(hashtable, current_time):
+    """Returns packages that cannot be assigned to trucks yet due to delays."""
+    unassignable_packages = []
+    
+    for package_id in hashtable.keys():
+        package = hashtable.get(package_id)
+        
+        # If package is delayed and hasn't arrived yet, don't assign it
+        if hasattr(package, 'delayed_until') and package.delayed_until:
+            if package.delayed_until > current_time:
+                unassignable_packages.append(package_id)
+    
+    return unassignable_packages
+
+
+def scan_for_available_delayed_packages(hashtable, current_time):
+    """
+    Scan the entire hash table for ALL undelivered delayed packages that are now available
+    """
+    available_delayed_packages = []
+    
+    print(f"Scanning hash table for delayed packages available at {current_time.strftime('%I:%M %p')}...")
+    
+    # Use the hashtable.keys() method to get all package IDs, then check each package
+    for package_id in hashtable.keys():
+        package = hashtable.get(package_id)
+        if package:
+            # Debug: Print package status for delayed packages
+            if hasattr(package, 'delayed_until') and package.delayed_until is not None:
+                print(f"Package {package_id}: delayed_until={package.delayed_until.strftime('%I:%M %p')}, status={package.status}, delivery_time={getattr(package, 'delivery_time', 'None')}")
+                
+                # Check if package is delayed but now available and NOT YET DELIVERED
+                if (package.delayed_until <= current_time and 
+                    (not hasattr(package, 'delivery_time') or package.delivery_time is None)):
+                    available_delayed_packages.append(package)
+    
+    return available_delayed_packages
+
+
 def load_distance_table(csv_file):
     """Load addresses + distance matrix from WGUPS CSV (finds the actual data rows)."""
     addresses = []
@@ -171,7 +206,6 @@ def load_distance_table(csv_file):
     return distance_table
 
 
-# initialize Trucks with driver constraint logic
 def initialize_trucks():
     """Create our truck objects with driver availability logic."""
     # ensure trucks start with a real datetime object for proper time math/strftime usage
@@ -188,39 +222,47 @@ def initialize_trucks():
     return [truck1, truck2, truck3]
 
 
-# FIXED: assign packages to Trucks
-def assign_packages_to_trucks(trucks, hashtable):
-    """Distributes packages according to constraints - ensures group packages stay together."""
+def assign_packages_to_trucks(trucks, hashtable, current_time):
+    """Distributes packages according to constraints - ONLY assigns available packages."""
 
-    truck1, truck2, truck3 = trucks
+    # Handle variable number of trucks
+    available_trucks = trucks  # Use whatever trucks are passed in
+    
+    # Get packages that cannot be assigned yet
+    unassignable = get_unassignable_packages(hashtable, current_time)
+    print(f"Packages delayed until later: {unassignable}")
 
     # FIXED: Handle group packages first - ALL must go on same truck
     group_packages = [13, 14, 15, 16, 19, 20]
     
-    # Try to fit all group packages on one truck
-    group_truck = None
-    for truck in [truck1, truck2, truck3]:
-        if len(truck.packages) + len(group_packages) <= truck.capacity:
-            group_truck = truck
-            break
+    # Only assign group packages if none are delayed
+    available_group_packages = [pkg_id for pkg_id in group_packages if pkg_id not in unassignable]
     
-    if group_truck is None:
-        raise Exception("No truck has enough capacity for all group packages together")
-    
-    # Load all group packages onto the selected truck
-    for pkg_id in group_packages:
-        group_truck.load_package(pkg_id, hashtable)
-    
-    print(f"Group packages (13,14,15,16,19,20) assigned to Truck {group_truck.truck_id}")
+    if available_group_packages:
+        # Try to fit all available group packages on one truck
+        group_truck = None
+        for truck in available_trucks:
+            if len(truck.packages) + len(available_group_packages) <= truck.capacity:
+                group_truck = truck
+                break
+        
+        if group_truck is None:
+            raise Exception("No truck has enough capacity for available group packages")
+        
+        # Load all available group packages onto the selected truck
+        for pkg_id in available_group_packages:
+            group_truck.load_package(pkg_id, hashtable)
+        
+        print(f"Available group packages {available_group_packages} assigned to Truck {group_truck.truck_id}")
 
     # Helper function for remaining packages
     def safe_load(preferred_truck, package_id, hashtable):
-        # Skip if package is already loaded (group packages)
-        if package_id in group_packages:
+        # Skip if package is delayed or already loaded
+        if package_id in unassignable or package_id in available_group_packages:
             return True
             
         # list trucks in order: preferred first, then the others
-        order = [preferred_truck] + [t for t in trucks if t is not preferred_truck]
+        order = [preferred_truck] + [t for t in available_trucks if t is not preferred_truck]
         for t in order:
             try:
                 t.load_package(package_id, hashtable)
@@ -234,104 +276,106 @@ def assign_packages_to_trucks(trucks, hashtable):
 
     # Process remaining packages
     for package_id in hashtable.keys():
-        # Skip group packages as they're already handled
-        if package_id in group_packages:
+        # Skip group packages and delayed packages
+        if package_id in group_packages or package_id in unassignable:
             continue
             
         package = hashtable.get(package_id)
 
         # Assign based on constraints
-        if hasattr(package, "delayed_until") and package.delayed_until:
-            # delayed packages go to truck 2 preferentially
-            if not safe_load(truck2, package.package_id, hashtable):
-                raise Exception(f"All trucks full while assigning delayed package {package.package_id}")
-
-        elif hasattr(package, "truck_restriction") and package.truck_restriction == 2:
-            # Must be on truck 2
-            if not safe_load(truck2, package.package_id, hashtable):
+        if hasattr(package, "truck_restriction") and package.truck_restriction == 2:
+            # Must be on truck 2 - find truck 2 in available trucks
+            truck2 = next((t for t in available_trucks if t.truck_id == 2), None)
+            if truck2 and not safe_load(truck2, package.package_id, hashtable):
                 raise Exception(f"Package {package.package_id} requires truck 2 but truck 2 is full")
-
         else:
-            # Default - try truck3 first, then others
-            if not safe_load(truck3, package.package_id, hashtable):
+            # Default - try first available truck, then others
+            if available_trucks and not safe_load(available_trucks[0], package.package_id, hashtable):
                 raise Exception(f"All trucks full while assigning package {package.package_id}")
 
 
-# run delivery with driver constraint logic
 def run_all_deliveries(trucks, hashtable, distance_table):
-    """runs the delivery loop for all trucks with 2-driver constraint."""
+    """runs the delivery loop for all trucks with proper delayed package handling."""
     
     truck1, truck2, truck3 = trucks
     
-    # only truck 1 and truck 2 can start initially (they have the 2 drivers)
-    available_trucks = [truck1, truck2]
+    # Phase 1: Initial deliveries (8:00 AM start)
+    print("=== Phase 1: Initial Deliveries (8:00 AM) ===")
+    initial_time = datetime.strptime("08:00 AM", "%I:%M %p")
     
-    # run deliveries for trucks with drivers
-    for truck in available_trucks:
-        # ensure truck has packages and all IDs are valid before running delivery
+    # Assign packages that are available at 8:00 AM to ALL trucks (not just 2)
+    assign_packages_to_trucks([truck1, truck2, truck3], hashtable, initial_time)
+    
+    # Print initial package assignments
+    for truck in [truck1, truck2, truck3]:
+        if truck.packages:
+            print(f"Truck {truck.truck_id} assigned packages: {sorted(truck.packages)}")
+    
+    # Run deliveries for trucks 1 and 2 (they have drivers)
+    active_trucks = []
+    for truck in [truck1, truck2]:
         if hasattr(truck, "packages") and truck.packages:
             valid_packages = [pid for pid in truck.packages if pid is not None]
             truck.packages = valid_packages
+            print(f"Truck {truck.truck_id} starting deliveries...")
             routing.run_delivery(truck, hashtable, distance_table)
+            active_trucks.append(truck)
     
-    # determine which truck finishes first to free up a driver for truck 3
-    if truck1.current_time <= truck2.current_time:
-        first_free_driver_time = truck1.current_time
-        print(f"Driver from Truck 1 becomes available at {first_free_driver_time.strftime('%I:%M %p')}")
-    else:
-        first_free_driver_time = truck2.current_time
-        print(f"Driver from Truck 2 becomes available at {first_free_driver_time.strftime('%I:%M %p')}")
+    # Determine when first driver becomes available
+    if active_trucks:
+        first_free_time = min(truck.current_time for truck in active_trucks)
+        print(f"First driver becomes available at {first_free_time.strftime('%I:%M %p')}")
     
-    # NEW: Handle delayed packages at 9:05 AM
-    delayed_available_time = datetime.strptime("09:05 AM", "%I:%M %p")
+    # Phase 2: Handle delayed packages with hash table scanning
+    print("\n=== Phase 2: Delayed Package Handling ===")
     
-    # Check if any delayed packages need to be delivered
-    delayed_packages = []
-    for package_id in hashtable.keys():
-        package = hashtable.get(package_id)
-        if hasattr(package, 'delayed_until') and package.delayed_until:
-            if package.delayed_until <= delayed_available_time and package.status != PackageStatus.DELIVERED:
-                delayed_packages.append(package_id)
+    # Handle package 9 (available at 10:20 AM) - this triggers scanning for ALL available packages
+    address_correction_time = datetime.strptime("10:20 AM", "%I:%M %p")
+    pkg9 = hashtable.get(9)
     
-    # If there are delayed packages, send a truck back out
-    if delayed_packages:
-        # Use truck2 for delayed packages (it should be available)
-        truck2.current_time = max(truck2.current_time, delayed_available_time)
-        truck2.current_location = "4001 South 700 East"  # Reset to hub
+    if pkg9 and hasattr(pkg9, 'delayed_until') and pkg9.status == PackageStatus.AT_HUB:
+        print(f"Package 9 becomes available at {address_correction_time.strftime('%I:%M %p')}")
         
-        # Update package 9's address if it's time
-        pkg9 = hashtable.get(9)
-        if pkg9 and hasattr(pkg9, 'delayed_until'):
-            address_correction_time = datetime.strptime("10:20 AM", "%I:%M %p")
-            if truck2.current_time >= address_correction_time:
-                # Update to correct address
-                pkg9.address = "410 S State St"  # Correct address
-                print(f"Package 9 address corrected at {truck2.current_time.strftime('%I:%M %p')}")
+        # Correct package 9's address
+        pkg9.address = "410 S State St"
+        print(f"Package 9 address corrected to: {pkg9.address}")
         
-        # Clear truck2's old packages and load delayed ones
-        truck2.packages = delayed_packages
+        # NOW SCAN FOR ALL AVAILABLE DELAYED PACKAGES
+        available_delayed_packages = scan_for_available_delayed_packages(hashtable, address_correction_time)
         
-        print(f"Truck 2 going back out at {truck2.current_time.strftime('%I:%M %p')} for delayed packages: {delayed_packages}")
-        
-        # Run delivery for delayed packages
-        routing.run_delivery(truck2, hashtable, distance_table)
+        if available_delayed_packages:
+            # Sort by package ID for consistent output
+            available_delayed_packages.sort(key=lambda p: p.package_id)
+            package_ids = [p.package_id for p in available_delayed_packages]
+            
+            print(f"Found ALL available delayed packages: {package_ids}")
+            
+            # Check truck capacities for the day
+            truck1_daily_count = len([pid for pid in truck1.packages if hashtable.get(pid) and hasattr(hashtable.get(pid), 'delivery_time') and hashtable.get(pid).delivery_time])
+            truck2_daily_count = len([pid for pid in truck2.packages if hashtable.get(pid) and hasattr(hashtable.get(pid), 'delivery_time') and hashtable.get(pid).delivery_time])
+            truck3_daily_count = len([pid for pid in truck3.packages if hashtable.get(pid) and hasattr(hashtable.get(pid), 'delivery_time') and hashtable.get(pid).delivery_time])
+            
+            print(f"Daily package counts - Truck 1: {truck1_daily_count}, Truck 2: {truck2_daily_count}, Truck 3: {truck3_daily_count}")
+            
+            # Use Truck 3 for delayed packages (it has capacity and a driver is now available)
+            available_truck = truck3
+            available_truck.current_time = max(available_truck.current_time or first_free_time, address_correction_time)
+            available_truck.current_location = "Western Governors University 4001 South 700 East Salt Lake City UT 84107"  # Reset to hub
+            
+            # Add delayed packages to Truck 3's existing package list
+            for package in available_delayed_packages:
+                available_truck.packages.append(package.package_id)
+                package.status = PackageStatus.EN_ROUTE
+                package.truck_id = available_truck.truck_id
+                package.load_time = available_truck.current_time.strftime("%I:%M %p")
+            
+            print(f"Truck {available_truck.truck_id} loading ALL delayed packages {package_ids} for delivery...")
+            print(f"Truck 3 total packages for the day: {sorted(available_truck.packages)}")
+            routing.run_delivery(available_truck, hashtable, distance_table)
     
-    # truck 3 can now start with the freed driver
-    # but must wait until at least 9:05 AM for delayed packages anyway
-    min_start_time = datetime.strptime("09:05 AM", "%I:%M %p")
-    truck3_start_time = max(first_free_driver_time, min_start_time)
-    
-    # update truck 3's start time and current time
-    truck3.current_time = truck3_start_time
-    truck3.start_time = truck3_start_time
-    
-    print(f"Truck 3 starts deliveries at {truck3_start_time.strftime('%I:%M %p')}")
-    
-    # now run delivery for truck 3
-    if hasattr(truck3, "packages") and truck3.packages:
-        valid_packages = [pid for pid in truck3.packages if pid is not None]
-        truck3.packages = valid_packages
-        routing.run_delivery(truck3, hashtable, distance_table)
+    # Phase 3: No longer needed since Truck 3 handles delayed packages
+    print("\n=== Phase 3: All deliveries completed ===")
+    print("All trucks have completed their deliveries for the day.")
 
 
 def print_delivery_statuses(trucks, hashtable):
@@ -553,10 +597,7 @@ if __name__ == "__main__":
     # create our trucks
     trucks = initialize_trucks()
 
-    # arranges and signals all our packages to all our trucks
-    assign_packages_to_trucks(trucks, hashtable)
-
-    # literally runs the entire truck delivery service (with driver constraint)
+    # literally runs the entire truck delivery service (with proper delayed package handling)
     run_all_deliveries(trucks, hashtable, distance_table)
 
     # start command-line interface for any adhoc checks

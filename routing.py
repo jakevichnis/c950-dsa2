@@ -130,14 +130,21 @@ def run_delivery(truck, hashtable, distance_table):
         
         # travel logistics of how the distance is proportional to where the truck is
         distance = get_distance(truck.current_location, package.address, distance_table)
-        # print(f"DEBUG: From '{truck.current_location}' to '{package.address}' = {distance} miles")
-        # print(f"DEBUG: Available addresses in distance table: {distance_table.addresses[:5]}...")  # show first 5
+
+       
+
+        # CRITICAL FIX: Ensure minimum travel time even for nearby locations
+        if distance < 0.1:  # If distance is essentially zero
+            distance = 0.1  # Set minimum distance to prevent instant delivery
+            
+
         time_taken = timedelta(hours = distance / truck.speed)
 
         # logging the actual process of delivering the package, first by truck then by package
         truck.update_location(package.address, distance, time_taken)
         
         # calling the deliver package method from our truck class
+        current_location = truck.current_location  
         truck.deliver_package(package_id, hashtable)
 
         print(f"Truck {truck.truck_id} delivered package {package.package_id} at {truck.current_time.strftime('%I:%M %p')}")

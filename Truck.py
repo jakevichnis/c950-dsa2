@@ -1,11 +1,10 @@
 
 
-
 from Package import Package
 from datetime import timedelta, datetime
 
 class Truck:
-    def __init__(self, truck_id, capacity=16, start_location="Western Governors University\n4001 South 700 East, \nSalt Lake City, UT 84107", start_time=0, speed=18):
+    def __init__(self, truck_id, capacity=16, start_location="Western Governors University 4001 South 700 East Salt Lake City UT 84107", start_time=0, speed=18):
         """
         Initialize a Truck object with:
         - truck_id: unique identifier for the truck
@@ -61,21 +60,15 @@ class Truck:
         
     # method to unload packages from the truck
     def deliver_package(self, package_id, hashtable):
-        """
-        Delivers package from the truck by its ID.
-        If the package is not found, it raises an error.
-        """
-        
-        # checks to see if the package_id is in the package list
-        if package_id not in self.packages:
-            raise Exception(f"Package {package_id} not found on Truck {self.truck_id}. Cannot unload.")
-          
-        package = hashtable.get(package_id)
-        package.mark_delivered(self.current_time)
-        self.packages.remove(package_id)
-        return package_id
-    
-    # method to time track the truck's delivery progress
+        package = hashtable.get(package_id)  # Use the parameter, not self.hashtable
+        if package:
+            package.mark_delivered(self.current_time)
+            print(f"Package {package_id} delivered at {self.current_time}")
+            return True
+        else:
+            print(f"Package {package_id} not found!")
+            return False
+
     def update_location(self, new_location, distance, time_taken):
         """
         Updates the truck's current location, mileage, and time after a delivery.
