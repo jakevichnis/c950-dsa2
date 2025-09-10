@@ -91,7 +91,8 @@ def load_packages(csv_file):
             
             # package 9 address correction at 10:20 AM
             if pkg_id == 9:
-                pkg.delayed_until = datetime.strptime("10:20 AM", "%I:%M %p")
+                pkg.correct_address = "410 S State St"  # Store the correct address
+                pkg.address_correction_time = datetime.strptime("10:20 AM", "%I:%M %p")
             
             # FIXED: ALL packages that must be delivered together (13, 14, 15, 16, 19, 20)
             # Based on CSV notes: 14 with 15,19; 16 with 13,19; 20 with 13,15
@@ -325,58 +326,67 @@ def run_all_deliveries(trucks, hashtable, distance_table):
     if active_trucks:
         first_free_time = min(truck.current_time for truck in active_trucks)
         print(f"First driver becomes available at {first_free_time.strftime('%I:%M %p')}")
+        
+        # FIXED: Assign driver to Truck 3 and deliver its initial packages
+        if truck3.packages:  # If truck3 has packages assigned
+            truck3.start_time = first_free_time  # Give truck3 a driver
+            truck3.current_time = first_free_time
+            truck3.current_location = "Western Governors University 4001 South 700 East Salt Lake City UT 84107"
+            
+            print(f"Truck 3 gets driver at {first_free_time.strftime('%I:%M %p')} and starts deliveries...")
+            routing.run_delivery(truck3, hashtable, distance_table)
     
     # Phase 2: Handle delayed packages with hash table scanning
     print("\n=== Phase 2: Delayed Package Handling ===")
     
-    # Handle package 9 (available at 10:20 AM) - this triggers scanning for ALL available packages
+    # Handle package 9 and other delayed packages (available at 10:20 AM)
     address_correction_time = datetime.strptime("10:20 AM", "%I:%M %p")
-    pkg9 = hashtable.get(9)
     
-    if pkg9 and hasattr(pkg9, 'delayed_until') and pkg9.status == PackageStatus.AT_HUB:
-        print(f"Package 9 becomes available at {address_correction_time.strftime('%I:%M %p')}")
+    # Scan for all available delayed packages
+    available_delayed_packages = scan_for_available_delayed_packages(hashtable, address_correction_time)
+    
+    if available_delayed_packages:
+        # Sort by package ID for consistent output
+        available_delayed_packages.sort(key=lambda p: p.package_id)
+        package_ids = [p.package_id for p in available_delayed_packages]
         
-        # Correct package 9's address
-        pkg9.address = "410 S State St"
-        print(f"Package 9 address corrected to: {pkg9.address}")
+        print(f"Found ALL available delayed packages: {package_ids}")
         
-        # NOW SCAN FOR ALL AVAILABLE DELAYED PACKAGES
-        available_delayed_packages = scan_for_available_delayed_packages(hashtable, address_correction_time)
+        # Correct package 9's address if needed
+        pkg9 = hashtable.get(9)
+        if pkg9 and hasattr(pkg9, 'correct_address'):
+            pkg9.address = pkg9.correct_address
+            print(f"Package 9 address corrected to: {pkg9.address}")
         
-        if available_delayed_packages:
-            # Sort by package ID for consistent output
-            available_delayed_packages.sort(key=lambda p: p.package_id)
-            package_ids = [p.package_id for p in available_delayed_packages]
+        # Determine which truck should handle delayed packages
+        # Use the truck that finished earliest and has capacity
+        best_truck = None
+        earliest_finish = None
+        
+        for truck in [truck1, truck2, truck3]:
+            if truck.current_time:
+                if earliest_finish is None or truck.current_time < earliest_finish:
+                    earliest_finish = truck.current_time
+                    best_truck = truck
+        
+        if best_truck:
+            # Reset truck to hub for delayed package pickup
+            best_truck.current_time = max(best_truck.current_time, address_correction_time)
+            best_truck.current_location = "Western Governors University 4001 South 700 East Salt Lake City UT 84107"
             
-            print(f"Found ALL available delayed packages: {package_ids}")
-            
-            # Check truck capacities for the day
-            truck1_daily_count = len([pid for pid in truck1.packages if hashtable.get(pid) and hasattr(hashtable.get(pid), 'delivery_time') and hashtable.get(pid).delivery_time])
-            truck2_daily_count = len([pid for pid in truck2.packages if hashtable.get(pid) and hasattr(hashtable.get(pid), 'delivery_time') and hashtable.get(pid).delivery_time])
-            truck3_daily_count = len([pid for pid in truck3.packages if hashtable.get(pid) and hasattr(hashtable.get(pid), 'delivery_time') and hashtable.get(pid).delivery_time])
-            
-            print(f"Daily package counts - Truck 1: {truck1_daily_count}, Truck 2: {truck2_daily_count}, Truck 3: {truck3_daily_count}")
-            
-            # Use Truck 3 for delayed packages (it has capacity and a driver is now available)
-            available_truck = truck3
-            available_truck.current_time = max(available_truck.current_time or first_free_time, address_correction_time)
-            available_truck.current_location = "Western Governors University 4001 South 700 East Salt Lake City UT 84107"  # Reset to hub
-            
-            # Add delayed packages to Truck 3's existing package list
+            # Add delayed packages to the truck
             for package in available_delayed_packages:
-                available_truck.packages.append(package.package_id)
+                best_truck.packages.append(package.package_id)
                 package.status = PackageStatus.EN_ROUTE
-                package.truck_id = available_truck.truck_id
-                package.load_time = available_truck.current_time.strftime("%I:%M %p")
+                package.truck_id = best_truck.truck_id
+                package.load_time = best_truck.current_time.strftime("%I:%M %p")
             
-            print(f"Truck {available_truck.truck_id} loading ALL delayed packages {package_ids} for delivery...")
-            print(f"Truck 3 total packages for the day: {sorted(available_truck.packages)}")
-            routing.run_delivery(available_truck, hashtable, distance_table)
+            print(f"Truck {best_truck.truck_id} loading ALL delayed packages {package_ids} for delivery...")
+            routing.run_delivery(best_truck, hashtable, distance_table)
     
-    # Phase 3: No longer needed since Truck 3 handles delayed packages
+    # Phase 3: All deliveries completed
     print("\n=== Phase 3: All deliveries completed ===")
     print("All trucks have completed their deliveries for the day.")
-
 
 def print_delivery_statuses(trucks, hashtable):
     """ prints final delivery statuses for all packages at the hard-coded snapshots."""
@@ -521,36 +531,75 @@ def delivery_interface(trucks, hashtable):
                             print(f"Package {pkg_id} | {package.address} | {status} | {package.deadline} | Truck {truck.truck_id}")
                             continue
                     
-                    # safely parses load/delivery times
+                    # FIXED: Better time parsing with consistent fallbacks
+                    load_time = None
+                    delivery_time = None
+                    
+                    # Parse load time
                     if getattr(package, "load_time", None):
                         try:
-                            load_time = datetime.strptime(package.load_time, "%I:%M %p").time()
-                        except Exception:
-                            load_time = package.load_time.time() if hasattr(package.load_time, "time") else datetime.max.time()
+                            if isinstance(package.load_time, str):
+                                load_time = datetime.strptime(package.load_time, "%I:%M %p").time()
+                            elif hasattr(package.load_time, "time"):
+                                load_time = package.load_time.time()
+                            else:
+                                load_time = package.load_time
+                        except:
+                            # Use truck start time as fallback
+                            if truck.start_time and hasattr(truck.start_time, 'time'):
+                                load_time = truck.start_time.time()
+                            else:
+                                load_time = datetime.strptime("08:00 AM", "%I:%M %p").time()  # Default start time
                     else:
                         # Use truck start time as fallback
                         if truck.start_time and hasattr(truck.start_time, 'time'):
                             load_time = truck.start_time.time()
                         else:
-                            load_time = datetime.max.time()
+                            load_time = datetime.strptime("08:00 AM", "%I:%M %p").time()  # Default start time
 
+                    # Parse delivery time - CRITICAL FIX HERE
                     if getattr(package, "delivery_time", None):
                         try:
-                            delivery_time = datetime.strptime(package.delivery_time, "%I:%M %p").time()
-                        except Exception:
-                            delivery_time = package.delivery_time.time() if hasattr(package.delivery_time, "time") else datetime.max.time()
+                            if isinstance(package.delivery_time, str):
+                                delivery_time = datetime.strptime(package.delivery_time, "%I:%M %p").time()
+                            elif hasattr(package.delivery_time, "time"):
+                                delivery_time = package.delivery_time.time()
+                            else:
+                                delivery_time = package.delivery_time
+                        except:
+                            print(f"DEBUG: Failed to parse delivery_time for package {package_id}: {package.delivery_time}")
+                            delivery_time = None  # Set to None instead of max time
                     else:
-                        delivery_time = datetime.max.time()
+                        delivery_time = None
                 
-                    if snap_time < load_time:
-                        status = "At Hub"
-                    elif load_time <= snap_time < delivery_time:
-                        status = "En Route"
+                    # FIXED: Status logic with proper None handling
+                    if delivery_time is None:
+                        # Package not yet delivered
+                        if snap_time < load_time:
+                            status = "At Hub"
+                        else:
+                            status = "En Route"
                     else:
-                        status = f"Delivered at {getattr(package, 'delivery_time', 'N/A')}"
+                        # Package has delivery time
+                        if snap_time < load_time:
+                            status = "At Hub"
+                        elif load_time <= snap_time < delivery_time:
+                            status = "En Route"
+                        else:
+                            status = f"Delivered at {getattr(package, 'delivery_time', 'N/A')}"
+                    
+                    # FIXED: Handle Package 9 address change
+                    display_address = package.address
+                    if package_id == 9:
+                        # Package 9 address changes at 10:20 AM
+                        address_change_time = datetime.strptime("10:20 AM", "%I:%M %p").time()
+                        if snap_time < address_change_time:
+                            display_address = "300 State St, Salt Lake City, UT 84103"
+                        else:
+                            display_address = "410 S State St, Salt Lake City, UT 84111"
                     
                     pkg_id = getattr(package, 'id', getattr(package, 'package_id', package_id))
-                    print(f"Package {pkg_id} | {package.address} | {status} | {package.deadline} | Truck {truck.truck_id}")
+                    print(f"Package {pkg_id} | {display_address} | {status} | {package.deadline} | Truck {truck.truck_id}")
 
         elif choice == "2":
             # checks single package by ID
@@ -563,8 +612,16 @@ def delivery_interface(trucks, hashtable):
             if package is None:
                 print(f"No package found with ID {package_id}.")
                 continue
+            
+            # Handle Package 9 address display in single package view
+            display_address = package.address
+            if package_id == 9:
+                print("Package 9 address updated at 10:20 AM")
+                print("Before 10:20 AM: 300 State St, Salt Lake City, UT 84103")
+                print("After 10:20 AM: 410 S State St, Salt Lake City, UT 84111")
+            
             print(f"\nPackage {getattr(package, 'id', getattr(package, 'package_id', package_id))} info:")
-            print(f"Address: {package.address}, City: {package.city}, Zip: {package.zip_code}")
+            print(f"Address: {display_address}, City: {package.city}, Zip: {package.zip_code}")
             print(f"Deadline: {package.deadline}, Status: {package.status.value}")
             print(f"Load time: {package.load_time}, Delivery time: {package.delivery_time}")
         
@@ -582,6 +639,7 @@ def delivery_interface(trucks, hashtable):
             print("Invalid choice. Enter a number between 1-4.")
 
 
+            
 # main execution
 if __name__ == "__main__":
 
