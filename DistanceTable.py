@@ -102,20 +102,29 @@ class DistanceTable:
         
         # if either index still not found, return reasonable default instead of crashing
         if i is None or j is None:
+            print(f"Distance: 2.0 (default - no match found)")
             return 2.0
         
-        # matrix may be triangular or full; try both orders
-        try:
-            return float(self.distance_matrix[i][j])
+        # Handle same location
+        if i == j:
+            print(f"Distance: 0.0 (same location)")
+            return 0.0
         
-        except Exception:
-            
-            try:
-                return float(self.distance_matrix[j][i])
-            
-            except Exception:
-                # if both fail, return reasonable default distance
-                return 2.0
+        # For lower triangular matrix: larger index is row, smaller is column
+        row = max(i, j)
+        col = min(i, j)
+        
+        try:
+            if row < len(self.distance_matrix) and col < len(self.distance_matrix[row]):
+                distance = float(self.distance_matrix[row][col])
+                print(f"Distance: {distance}")
+                return distance
+        except (IndexError, ValueError):
+            pass
+        
+        # Fallback
+        print(f"Distance: 2.0 (default - matrix error)")
+        return 2.0
 
 
 # top-level helper function expected by routing.py: get_distance(addr1, addr2, distance_table)

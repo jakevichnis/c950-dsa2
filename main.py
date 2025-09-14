@@ -76,147 +76,124 @@ def load_packages(csv_file):
             # Delayed packages (6, 25, 28, 32) + any with "delayed" or "9:05" text
             if ("delayed" in notes_lower and "9:05" in notes_lower) or pkg_id in [6, 25, 28, 32]:
                 pkg.delayed_until = datetime.strptime("09:05 AM", "%I:%M %p")
-                # Delayed packages go on Truck 2 (leaves at 9:30 AM)
-                pkg.truck_restriction = 2
             
             # Package 9 address correction - goes on Truck 3 at 10:21 AM
             if pkg_id == 9:
                 pkg.correct_address = "410 S State St"  # Store the correct address
                 pkg.address_correction_time = datetime.strptime("10:20 AM", "%I:%M %p")
-                pkg.truck_restriction = 3  # Package 9 goes on Truck 3
-            
-            # Group packages (13, 14, 15, 16, 19, 20) - go on Truck 1
-            if pkg_id in [13, 14, 15, 16, 19, 20]:
-                pkg.group_constrained = True
-                pkg.truck_restriction = 1  # Group packages go on Truck 1
             
             # Packages that can only be on truck 2 (3, 18, 36, 38)
             if "can only be on truck 2" in notes_lower or "truck 2" in notes_lower:
                 pkg.truck_restriction = 2
                 
-        # All remaining packages (no restrictions) go on Truck 1, overflow to Truck 2
-        if not hasattr(pkg, 'truck_restriction') or pkg.truck_restriction is None:
-            pkg.truck_restriction = 1  # Default to Truck 1
-                
         hashtable.insert(pkg.id, pkg)
     return hashtable
 
 
-def initialize_trucks():
-    """Create truck objects with updated departure times."""
-    # Truck 1 starts at 8:00 AM
-    truck1_start = datetime.strptime("08:00 AM", "%I:%M %p")
-    truck1 = Truck(truck_id = 1, start_time = truck1_start)
-    
-    # Truck 2 waits until 9:30 AM (for delayed packages)
-    truck2_start = datetime.strptime("09:30 AM", "%I:%M %p")
-    truck2 = Truck(truck_id = 2, start_time = truck2_start)
-    
-    # Truck 3 waits until 10:21 AM (for Package 9 address correction)
-    truck3_start = datetime.strptime("10:21 AM", "%I:%M %p")
-    truck3 = Truck(truck_id = 3, start_time = truck3_start)
-    
-    return [truck1, truck2, truck3]
 
-
-def assign_packages_to_trucks(trucks, hashtable, current_time):
+def assign_packages_to_trucks(trucks, hashtable):
     """
-    Sequential truck loading strategy:
-    1. Truck 1: Fill with unconstrained packages first (leaves at 8:00 AM)
-    2. Truck 2: Load truck 2 required packages + fill remaining with unconstrained (leaves at 9:30 AM)
-    3. Truck 3: Load Package 9 + any remaining packages (leaves at 10:21 AM)
+    Load packages into trucks with corrected assignments for grouped deliveries
+    and proper constraint handling.
     """
+    print("=== Loading All Trucks (8:00 AM) ===")
+    print("Loading trucks sequentially at 08:00 AM...")
     
-    print(f"Loading trucks sequentially at {current_time.strftime('%I:%M %p')}...")
+    # Manual truck assignments to ensure grouped packages stay together
+    # and all constraints are met
     
-    # Get all packages and categorize them
-    all_packages = list(hashtable.keys())
+    truck1_packages = [
+        15,  # 9:00 AM deadline - HIGHEST PRIORITY
+        1, 13, 14, 16, 19, 20,  # Grouped packages (must be delivered together)
+        29, 30, 31, 34, 37, 40,  # Other 10:30 AM deadlines
+        2, 4, 5  # Fill remaining slots
+    ]
     
-    # Categorize packages based on constraints
-    truck2_required = []  # Must go on Truck 2
-    delayed_packages = []  # Delayed until 9:05 AM
-    package_9 = []  # Package 9 (wrong address until 10:20 AM)
-    unconstrained = []  # No specific constraints
+    truck2_packages = [
+        3, 18, 36, 38,  # Required on truck 2 (CSV notes)
+        6, 25, 28, 32,  # Delayed packages (available after 9:05 AM)
+        21, 22, 23, 24, 26, 27  # Fill remaining slots
+    ]
     
-    for package_id in all_packages:
+    truck3_packages = [
+        9,  # Wrong address - corrected at 10:20 AM
+        7, 8, 10, 11, 12, 17, 33, 35, 39  # Remaining packages
+    ]
+    
+    # Load Truck 1
+    print(f"\nLoading Truck 1:")
+    for package_id in truck1_packages:
         package = hashtable.get(package_id)
-        
-        if package_id == 9:
-            package_9.append(package_id)
-        elif hasattr(package, 'delayed_until') and package.delayed_until:
-            delayed_packages.append(package_id)
-        elif (hasattr(package, 'notes') and 
-              ("can only be on truck 2" in package.notes.lower() or "truck 2" in package.notes.lower())):
-            truck2_required.append(package_id)
-        else:
-            unconstrained.append(package_id)
-    
-    print(f"Truck 2 required: {sorted(truck2_required)}")
-    print(f"Delayed packages: {sorted(delayed_packages)}")
-    print(f"Package 9: {package_9}")
-    print(f"Unconstrained: {len(unconstrained)} packages")
-    
-    # Find trucks
-    truck1 = next((t for t in trucks if t.truck_id == 1), None)
-    truck2 = next((t for t in trucks if t.truck_id == 2), None)
-    truck3 = next((t for t in trucks if t.truck_id == 3), None)
-    
-    # Phase 1: Load Truck 1 with unconstrained packages (up to 16)
-    if truck1:
-        truck1_packages = unconstrained[:16]  # Take first 16 unconstrained
-        unconstrained = unconstrained[16:]   # Remove assigned packages from unconstrained list
-        
-        for pkg_id in truck1_packages:
-            truck1.load_package(pkg_id, hashtable)
-            print(f"Package {pkg_id} → Truck 1")
-    
-    # Phase 2: Load Truck 2 with required packages + delayed + remaining unconstrained
-    if truck2:
-        # Start with truck 2 required packages
-        truck2_packages = truck2_required.copy()
-        
-        # Add delayed packages (they can go on truck 2 since it leaves at 9:30 AM)
-        truck2_packages.extend(delayed_packages)
-        
-        # Fill remaining capacity with unconstrained packages
-        remaining_capacity = 16 - len(truck2_packages)
-        if remaining_capacity > 0 and unconstrained:
-            truck2_packages.extend(unconstrained[:remaining_capacity])
-            unconstrained = unconstrained[remaining_capacity:]
-        
-        for pkg_id in truck2_packages:
-            truck2.load_package(pkg_id, hashtable)
-            if pkg_id in truck2_required:
-                print(f"Package {pkg_id} → Truck 2 (required)")
-            elif pkg_id in delayed_packages:
-                print(f"Package {pkg_id} → Truck 2 (delayed)")
+        if package:
+            trucks[0].load_package(package_id, hashtable)
+            package.assigned_truck = 1
+            if package_id == 15:
+                print(f"Package {package_id} → Truck 1 (9:00 AM deadline - PRIORITY)")
+            elif package_id in [1, 13, 14, 16, 19, 20]:
+                print(f"Package {package_id} → Truck 1 (grouped delivery)")
+            elif package_id in [29, 30, 31, 34, 37, 40]:
+                print(f"Package {package_id} → Truck 1 (10:30 AM deadline)")
             else:
-                print(f"Package {pkg_id} → Truck 2 (unconstrained)")
+                print(f"Package {package_id} → Truck 1")
     
-    # Phase 3: Load Truck 3 with Package 9 + any remaining packages
-    if truck3:
-        truck3_packages = package_9.copy()  # Start with Package 9
-        
-        # Add any remaining unconstrained packages
-        truck3_packages.extend(unconstrained)
-        
-        for pkg_id in truck3_packages:
-            truck3.load_package(pkg_id, hashtable)
-            if pkg_id == 9:
-                print(f"Package {pkg_id} → Truck 3 (wrong address correction)")
+    # Load Truck 2
+    print(f"\nLoading Truck 2:")
+    for package_id in truck2_packages:
+        package = hashtable.get(package_id)
+        if package:
+            trucks[1].load_package(package_id, hashtable)
+            package.assigned_truck = 2
+            if package_id in [3, 18, 36, 38]:
+                print(f"Package {package_id} → Truck 2 (required)")
+            elif package_id in [6, 25, 28, 32]:
+                print(f"Package {package_id} → Truck 2 (delayed until 9:05 AM)")
             else:
-                print(f"Package {pkg_id} → Truck 3 (remaining)")
+                print(f"Package {package_id} → Truck 2")
     
-    # Print final assignments
+    # Load Truck 3
+    print(f"\nLoading Truck 3:")
+    for package_id in truck3_packages:
+        package = hashtable.get(package_id)
+        if package:
+            trucks[2].load_package(package_id, hashtable)
+            package.assigned_truck = 3
+            if package_id == 9:
+                print(f"Package {package_id} → Truck 3 (wrong address - corrected at 10:20 AM)")
+            else:
+                print(f"Package {package_id} → Truck 3")
+    
+    # Verify all packages assigned
+    total_assigned = len(trucks[0].packages) + len(trucks[1].packages) + len(trucks[2].packages)
+    
     print(f"\nFinal truck assignments:")
-    total_assigned = 0
-    for truck in trucks:
-        if truck.packages:
-            print(f"Truck {truck.truck_id}: {len(truck.packages)} packages {sorted(truck.packages)}")
-            total_assigned += len(truck.packages)
-    
+    print(f"Truck 1: {len(trucks[0].packages)} packages {sorted(trucks[0].packages)}")
+    print(f"Truck 2: {len(trucks[1].packages)} packages {sorted(trucks[1].packages)}")
+    print(f"Truck 3: {len(trucks[2].packages)} packages {sorted(trucks[2].packages)}")
     print(f"Total packages assigned: {total_assigned}/40")
+    
+    if total_assigned != 40:
+        print("WARNING: Not all packages were assigned!")
+    else:
+        print("SUCCESS: All 40 packages assigned correctly!")
 
+
+def initialize_trucks():
+    """
+    Initialize trucks with proper start times and constraints
+    """
+    trucks = []
+    
+    # Use keyword arguments to avoid parameter order confusion
+    truck1 = Truck(truck_id=1, start_time=datetime.strptime("08:00", "%H:%M"))
+    trucks.append(truck1)
+    
+    truck2 = Truck(truck_id=2, start_time=datetime.strptime("09:30", "%H:%M"))
+    trucks.append(truck2)
+    
+    truck3 = Truck(truck_id=3, start_time=datetime.strptime("10:21", "%H:%M"))
+    trucks.append(truck3)
+    
+    return trucks
 
 def run_all_deliveries(trucks, hashtable, distance_table):
     """
@@ -226,11 +203,10 @@ def run_all_deliveries(trucks, hashtable, distance_table):
     truck1, truck2, truck3 = trucks
     
     # SINGLE ASSIGNMENT PHASE: Load all trucks at start but they leave at different times
-    print("=== Loading All Trucks (8:00 AM) ===")
     initial_time = datetime.strptime("08:00 AM", "%I:%M %p")
     
     # Load all trucks according to strategy
-    assign_packages_to_trucks([truck1, truck2, truck3], hashtable, initial_time)
+    assign_packages_to_trucks([truck1, truck2, truck3], hashtable)
     
     # Phase 1: Truck 1 leaves at 8:00 AM
     print("\n=== Phase 1: Truck 1 Deliveries (8:00 AM) ===")
@@ -620,6 +596,98 @@ def delivery_interface(trucks, hashtable):
             print("Invalid choice. Enter a number between 1-4.")
 
 
+
+
+
+
+
+
+
+def debug_mileage(trucks, hashtable, distance_table):
+    """Debug mileage calculation by checking each truck's route"""
+    
+    print("\n=== MILEAGE DEBUG REPORT ===")
+    total_mileage = 0
+    
+    for truck in trucks:
+        print(f"\nTruck {truck.truck_id}:")
+        print(f"  Reported mileage: {truck.mileage:.2f}")
+        print(f"  Number of packages: {len(truck.packages)}")
+        print(f"  Start location: {truck.current_location}")
+        
+        # Check if truck has a route history or delivery order
+        if hasattr(truck, 'route') or hasattr(truck, 'delivery_order'):
+            route = getattr(truck, 'route', getattr(truck, 'delivery_order', []))
+            print(f"  Route taken: {route}")
+        
+        # Manual distance calculation check
+        hub_address = "Western Governors University 4001 South 700 East"
+        current_location = hub_address
+        manual_distance = 0
+        
+        print(f"  Package delivery addresses:")
+        for package_id in truck.packages:
+            package = hashtable.get(package_id)
+            if package:
+                address = package.address
+                print(f"    Package {package_id}: {address}")
+                
+                # Get distance from current location to this package
+                try:
+                    distance = distance_table.get_distance(current_location, address)
+                    manual_distance += distance
+                    print(f"      Distance from {current_location[:20]}... to {address[:20]}...: {distance}")
+                    current_location = address
+                except Exception as e:
+                    print(f"      ERROR getting distance: {e}")
+        
+        # Add return to hub distance
+        try:
+            return_distance = distance_table.get_distance(current_location, hub_address)
+            manual_distance += return_distance
+            print(f"    Return to hub: {return_distance}")
+        except Exception as e:
+            print(f"    ERROR getting return distance: {e}")
+        
+        print(f"  Manual calculation: {manual_distance:.2f}")
+        print(f"  Difference: {abs(truck.mileage - manual_distance):.2f}")
+        
+        total_mileage += truck.mileage
+    
+    print(f"\nTOTAL MILEAGE: {total_mileage:.2f}")
+    
+    # Check distance table integrity
+    print(f"\n=== DISTANCE TABLE DEBUG ===")
+    print(f"Number of addresses in distance table: {len(distance_table.addresses) if hasattr(distance_table, 'addresses') else 'Unknown'}")
+    
+    # Test a few known distances
+    hub = "Western Governors University 4001 South 700 East"
+    test_addresses = []
+    
+    # Get first few package addresses for testing
+    for i in range(min(5, len(hashtable.keys()))):
+        package_id = list(hashtable.keys())[i]
+        package = hashtable.get(package_id)
+        if package:
+            test_addresses.append(package.address)
+    
+    print(f"Sample distance calculations:")
+    for addr in test_addresses[:3]:
+        try:
+            dist = distance_table.get_distance(hub, addr)
+            print(f"  Hub to {addr[:30]}...: {dist}")
+        except Exception as e:
+            print(f"  ERROR: {e}")
+
+
+
+
+
+
+
+
+
+
             
 # main execution
 if __name__ == "__main__":
@@ -633,11 +701,14 @@ if __name__ == "__main__":
     # use excel data to create the distance table map matrix
     distance_table = load_distance_table("WGUPS_Distance_Table.csv")
 
+
     # create our trucks
     trucks = initialize_trucks()
 
     # literally runs the entire truck delivery service (with proper delayed package handling)
     run_all_deliveries(trucks, hashtable, distance_table)
+
+    debug_mileage(trucks, hashtable, distance_table)
 
     # start command-line interface for any adhoc checks
     delivery_interface(trucks, hashtable)

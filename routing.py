@@ -15,48 +15,83 @@ import csv
 def select_deadline_package(truck, hashtable, distance_table):
     """
     Check truck's remaining packages for any urgent deadlines.
-    If multiple, pick the one closest to current truck location.
-    Return the selected package.
+    Handles grouped packages that must be delivered together.
+    Prioritizes: 9:00 AM -> 10:30 AM -> EOD
     """
-
-    earliest_package = None
-    earliest_deadline = None
-
-    # for loop iterating through each package on truck
-    for package_id in truck.packages:
-        # hashtable of truck.packages
-        package = hashtable.get(package_id)
-
-        # FIXED: Only skip if already delivered (allow EN_ROUTE packages)
-        if package.status == PackageStatus.DELIVERED:
-            continue
-
-        if package.status == PackageStatus.DELAYED:
-            continue
-
-        # FIXED: Add safe checks for constraint attributes
-        if hasattr(package, 'delayed_until') and package.delayed_until and truck.current_time < package.delayed_until:
-            continue
-
-        # selection process: pick earliest deadline
-        if earliest_deadline is None or package.deadline < earliest_deadline:
-            earliest_deadline = package.deadline
-            earliest_package = package
-
-    # fallback: if no package with deadline found, pick first eligible package
-    if earliest_package:
-        return earliest_package.package_id
-    else:
+    
+    def deadline_to_time(deadline_str):
+        """Convert deadline string to comparable time value"""
+        if deadline_str == "EOD":
+            return 999  # EOD has lowest priority
+        try:
+            time_obj = datetime.strptime(deadline_str, "%I:%M %p")
+            return time_obj.hour + (time_obj.minute / 60.0)
+        except:
+            return 999
+    
+    def get_package_groups():
+        """Define which packages must be delivered together"""
+        return [
+            [13, 14, 15, 16, 19, 20]  # All must be delivered together
+        ]
+    
+    def find_group_for_package(package_id):
+        """Find which group a package belongs to"""
+        groups = get_package_groups()
+        for group in groups:
+            if package_id in group:
+                return group
+        return [package_id]  # Single package group
+    
+    def get_eligible_packages():
+        """Get all packages that can be delivered now"""
+        eligible = []
         for package_id in truck.packages:
             package = hashtable.get(package_id)
-            if package.status != PackageStatus.DELIVERED:
-                # FIXED: Safe check for delayed_until
-                if hasattr(package, 'delayed_until') and package.delayed_until:
-                    if truck.current_time >= package.delayed_until:
-                        return package.package_id
-                else:
-                    return package.package_id
+            
+            if package.status == PackageStatus.DELIVERED:
+                continue
+            if package.status == PackageStatus.DELAYED:
+                continue
+            if hasattr(package, 'delayed_until') and package.delayed_until and truck.current_time < package.delayed_until:
+                continue
+                
+            eligible.append(package_id)
+        return eligible
+    
+    eligible_packages = get_eligible_packages()
+    if not eligible_packages:
         return None
+    
+    # Find the package with earliest deadline (considering groups)
+    best_package = None
+    best_deadline_time = float('inf')
+    best_distance = float('inf')
+    
+    for package_id in eligible_packages:
+        package = hashtable.get(package_id)
+        deadline_time = deadline_to_time(package.deadline)
+        
+        # For grouped packages, use the earliest deadline in the group
+        group = find_group_for_package(package_id)
+        group_earliest_deadline = float('inf')
+        
+        for group_pkg_id in group:
+            if group_pkg_id in truck.packages:
+                group_pkg = hashtable.get(group_pkg_id)
+                group_deadline_time = deadline_to_time(group_pkg.deadline)
+                group_earliest_deadline = min(group_earliest_deadline, group_deadline_time)
+        
+        distance = get_distance(truck.current_location, package.address, distance_table)
+        
+        # Select based on earliest group deadline, then distance
+        if (group_earliest_deadline < best_deadline_time or 
+            (group_earliest_deadline == best_deadline_time and distance < best_distance)):
+            best_deadline_time = group_earliest_deadline
+            best_distance = distance
+            best_package = package_id
+    
+    return best_package
 
 def select_nearest_neighbor(truck, hashtable, distance_table):
     """
@@ -102,56 +137,104 @@ def select_nearest_neighbor(truck, hashtable, distance_table):
                     return package.package_id
         return None
 
+def deliver_package_group(truck, package_id, hashtable, distance_table):
+    """
+    Deliver a package and any grouped packages that must be delivered together
+    """
+    def get_package_groups():
+        return [[13, 14, 15, 16, 19, 20]]
+    
+    def find_group_for_package(pkg_id):
+        groups = get_package_groups()
+        for group in groups:
+            if pkg_id in group:
+                return group
+        return [pkg_id]
+    
+    group = find_group_for_package(package_id)
+    
+    # Filter to only packages that are on this truck and not delivered
+    deliverable_group = []
+    for group_pkg_id in group:
+        if group_pkg_id in truck.packages:
+            package = hashtable.get(group_pkg_id)
+            if package.status != PackageStatus.DELIVERED:
+                # Check if delayed packages are ready
+                if hasattr(package, 'delayed_until') and package.delayed_until:
+                    if truck.current_time >= package.delayed_until:
+                        deliverable_group.append(group_pkg_id)
+                else:
+                    deliverable_group.append(group_pkg_id)
+    
+    if not deliverable_group:
+        return
+    
+    # Sort by distance to deliver efficiently within the group
+    deliverable_group.sort(key=lambda pid: get_distance(truck.current_location, 
+                                                       hashtable.get(pid).address, 
+                                                       distance_table))
+    
+    # Deliver all packages in the group
+    for group_pkg_id in deliverable_group:
+        package = hashtable.get(group_pkg_id)
+        
+        distance = get_distance(truck.current_location, package.address, distance_table)
+        if distance < 0.1:
+            distance = 0.1
+            
+        time_taken = timedelta(hours=distance / truck.speed)
+        truck.update_location(package.address, distance, time_taken)
+        truck.deliver_package(group_pkg_id, hashtable)
+        
+        print(f"Truck {truck.truck_id} delivered package {package.package_id} at {truck.current_time.strftime('%I:%M %p')} (group delivery)")
+
 def run_delivery(truck, hashtable, distance_table):
     """
-    While truck still has undelivered packages:
-        - check deadlines
-        - else pick nearest neighbor
-        - deliver package
-        - update truck mileage, time, and package status
-    End when all packages delivered.
+    Modified delivery run that handles grouped packages
     """
-    
-    # FIXED: Check for undelivered packages instead of just package count
     undelivered_packages = [pid for pid in truck.packages 
                            if hashtable.get(pid).status != PackageStatus.DELIVERED]
     
     while len(undelivered_packages) > 0:
+        # Select next package considering deadlines and groups
         package_id = select_deadline_package(truck, hashtable, distance_table)
+        
         if package_id is None:
             package_id = select_nearest_neighbor(truck, hashtable, distance_table)
         
         if package_id is None:
-            # safety check - no more deliverable packages
             break
-
-        # retrieves package object from hashtable
-        package = hashtable.get(package_id)
         
-        # travel logistics of how the distance is proportional to where the truck is
-        distance = get_distance(truck.current_location, package.address, distance_table)
-
-       
-
-        # CRITICAL FIX: Ensure minimum travel time even for nearby locations
-        if distance < 0.1:  # If distance is essentially zero
-            distance = 0.1  # Set minimum distance to prevent instant delivery
+        # Check if this package is part of a group that needs to be delivered together
+        def get_package_groups():
+            return [[13, 14, 15, 16, 19, 20]]
+        
+        def find_group_for_package(pkg_id):
+            groups = get_package_groups()
+            for group in groups:
+                if pkg_id in group:
+                    return group
+            return [pkg_id]
+        
+        group = find_group_for_package(package_id)
+        
+        if len(group) > 1:
+            # Deliver the entire group
+            deliver_package_group(truck, package_id, hashtable, distance_table)
+        else:
+            # Deliver single package normally
+            package = hashtable.get(package_id)
+            distance = get_distance(truck.current_location, package.address, distance_table)
             
-
-        time_taken = timedelta(hours = distance / truck.speed)
-
-        # logging the actual process of delivering the package, first by truck then by package
-        truck.update_location(package.address, distance, time_taken)
+            if distance < 0.1:
+                distance = 0.1
+                
+            time_taken = timedelta(hours=distance / truck.speed)
+            truck.update_location(package.address, distance, time_taken)
+            truck.deliver_package(package_id, hashtable)
+            
+            print(f"Truck {truck.truck_id} delivered package {package.package_id} at {truck.current_time.strftime('%I:%M %p')}")
         
-        # calling the deliver package method from our truck class
-        current_location = truck.current_location  
-        truck.deliver_package(package_id, hashtable)
-
-        print(f"Truck {truck.truck_id} delivered package {package.package_id} at {truck.current_time.strftime('%I:%M %p')}")
-        
-        # FIXED: Update undelivered packages list
+        # Update undelivered packages list
         undelivered_packages = [pid for pid in truck.packages 
                                if hashtable.get(pid).status != PackageStatus.DELIVERED]
-        
-        
-        
